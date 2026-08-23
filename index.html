@@ -6,9 +6,9 @@
 <title>우리 아이</title>
 <style>
   :root{
-    --bg:#f5f6f8; --card:#fff; --line:#e6e8ec; --text:#22242a; --sub:#6b7280;
-    --accent:#5b8def; --accent-soft:#eaf1ff; --danger:#e05a5a; --ok:#2fa36b;
-    --shadow:0 1px 3px rgba(0,0,0,.06);
+    --bg:#faf6f1; --card:#fff; --line:#eee6dc; --text:#2b2a28; --sub:#8a8378;
+    --accent:#f2884b; --accent-soft:#fdeee2; --danger:#e05a5a; --ok:#3aa76d;
+    --shadow:0 2px 8px rgba(120,90,60,.07);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--text);
@@ -16,7 +16,8 @@
     line-height:1.5;padding-bottom:40px}
   header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);
     padding:14px 16px;display:flex;align-items:center;gap:10px;z-index:5}
-  header .baby{font-size:22px}
+  header .baby{font-size:22px;background:var(--accent-soft);border-radius:50%;
+    width:38px;height:38px;display:flex;align-items:center;justify-content:center}
   header .name{font-size:18px;font-weight:700;flex:1}
   header .name:focus{outline:none;border-bottom:1px dashed var(--accent)}
   header button.icon{background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:4px}
@@ -45,6 +46,19 @@
   .item .del{background:none;border:none;color:var(--sub);font-size:16px;cursor:pointer;padding:2px 4px}
   .empty{color:var(--sub);text-align:center;padding:36px 10px;font-size:14px}
   .empty .em{font-size:34px;display:block;margin-bottom:8px}
+  /* 일정 D-day 배지 / 지난 일정 접기 */
+  .ev-head{display:flex;align-items:flex-start;gap:8px}
+  .ev-head .title{flex:1;min-width:0}
+  .badge{font-size:12px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;flex:0 0 auto}
+  .b-today{background:#ffe1d3;color:#d1451b}
+  .b-soon{background:#fff0c9;color:#b57d0a}
+  .b-far{background:#eef0f4;color:#6b7280}
+  .b-past{background:#f0ece7;color:#a59b8f}
+  .item.past{opacity:.5}
+  .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
+    cursor:pointer;padding:8px 2px 2px}
+  .past-wrap{display:none;margin-top:6px}
+  .past-wrap.open{display:block}
   /* modal */
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;
     justify-content:center;z-index:20}
@@ -270,25 +284,55 @@ function render(){
     en.structured.supplies.forEach((v,i)=>supplies.push({v,en,i,kind:'supplies'}));
     en.structured.notes.forEach((v,i)=>notes.push({v,en,i,kind:'notes'}));
   });
-  events.sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
+  // 일정: D-day 계산 → 다가옴 / 지남 분리
+  events.forEach(o=>{ o.dd=dday(o.e.date); });
+  const upcoming=events.filter(o=>!o.dd||o.dd.diff>=0)
+    .sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
+  const past=events.filter(o=>o.dd&&o.dd.diff<0)
+    .sort((a,b)=>(b.e.date||'').localeCompare(a.e.date||''));
 
   let html='';
-  html+=section('📅 일정', events.map(({e,en})=>{
-    const meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
-    return itemRow(en, `<div class="title">${esc(e.title)}</div>${meta?`<div class="meta">${esc(meta)}</div>`:''}`);
-  }));
+  const evRows=upcoming.map(({e,en,dd})=>eventRow(e,en,dd));
+  if(past.length){
+    evRows.push(`<button class="group-toggle" data-pasttoggle>지난 일정 ${past.length}개 보기 ▾</button>`);
+    evRows.push(`<div class="past-wrap" data-pastwrap>${past.map(({e,en,dd})=>eventRow(e,en,dd)).join('')}</div>`);
+  }
+  html+=section('📅 일정', evRows);
   html+=section('☑️ 해야 할 일', tasks.map(({v,en,i})=>checkRow(en,i,v)));
   html+=section('🎒 준비물', supplies.map(({v,en})=>itemRow(en,`<div class="title">${esc(v)}</div>`)));
   html+=section('🔔 중요 알림', notes.map(({v,en})=>itemRow(en,`<div class="title">${esc(v)}</div>`)));
   board.innerHTML=html;
   bindBoard();
+  const pt=board.querySelector('[data-pasttoggle]');
+  if(pt) pt.onclick=()=>{
+    const w=board.querySelector('[data-pastwrap]'); const open=w.classList.toggle('open');
+    pt.textContent=open?'지난 일정 접기 ▴':`지난 일정 ${past.length}개 보기 ▾`;
+  };
+}
+/* 오늘 기준 D-day. 날짜 없으면 null */
+function dday(dateStr){
+  if(!dateStr||!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const t=new Date(); t.setHours(0,0,0,0);
+  const diff=Math.round((new Date(dateStr+'T00:00:00')-t)/86400000);
+  if(diff<0) return {label:'지남', cls:'past', diff};
+  if(diff===0) return {label:'오늘', cls:'today', diff};
+  if(diff===1) return {label:'내일', cls:'soon', diff};
+  if(diff<=7) return {label:'D-'+diff, cls:'soon', diff};
+  return {label:'D-'+diff, cls:'far', diff};
+}
+function eventRow(e,en,dd){
+  const meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
+  const badge=dd?`<span class="badge b-${dd.cls}">${dd.label}</span>`:'';
+  const inner=`<div class="ev-head"><div class="title">${esc(e.title)}</div>${badge}</div>`+
+    (meta?`<div class="meta">${esc(meta)}</div>`:'');
+  return itemRow(en, inner, dd&&dd.cls==='past'?'past':'');
 }
 function section(title, rows){
   if(rows.length===0) return '';
   return `<div class="section"><h2>${title}</h2>${rows.join('')}</div>`;
 }
-function itemRow(en, inner){
-  return `<div class="item" data-en="${en.id}">
+function itemRow(en, inner, cls=''){
+  return `<div class="item ${cls}" data-en="${en.id}">
     <div class="body">${inner}
       <span class="src" data-raw>원문 보기</span>
       <div class="raw">${esc(en.source.rawText||'(이미지 공지)')}</div>
