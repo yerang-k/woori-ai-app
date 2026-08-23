@@ -104,12 +104,17 @@
   .btn:disabled{opacity:.5}
   .preview-img{max-width:100%;border-radius:10px;margin-top:10px;display:none}
   .hint{font-size:13px;color:var(--sub);margin:6px 0 0}
-  .edit-list{margin-top:4px}
-  .edit-list .er{display:flex;gap:6px;margin-bottom:6px;align-items:center}
-  .edit-list .er input{margin-bottom:0}
-  .edit-list .er button{background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer}
+  .er{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+  .er input{margin-bottom:0}
+  .er button{background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer}
   .addline{background:none;border:1px dashed var(--line);border-radius:10px;padding:8px;width:100%;
     color:var(--accent);cursor:pointer;font-size:14px}
+  .eblock{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--bg)}
+  .eblock .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .eblock .ev-title{flex:1;margin-bottom:0}
+  .eblock .rm-block{background:none;border:none;font-size:18px;cursor:pointer;flex:0 0 auto;padding:2px}
+  .eblock .addline{margin-top:2px;margin-bottom:4px}
+  .mini-h{font-size:12px;color:var(--sub);font-weight:700;margin:8px 0 5px}
   .spinner{text-align:center;padding:20px;color:var(--sub)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
     padding:10px 16px;border-radius:20px;font-size:14px;z-index:50;opacity:0;transition:opacity .2s}
@@ -149,18 +154,8 @@
 <div class="modal-bg" id="editModal">
   <div class="modal">
     <h3>내용 수정</h3>
-    <label>일정 (제목 · 날짜 · 시간)</label>
-    <div class="edit-list" id="edEvents"></div>
-    <button class="addline" data-add="events">+ 일정 추가</button>
-    <label>해야 할 일</label>
-    <div class="edit-list" id="edTasks"></div>
-    <button class="addline" data-add="tasks">+ 할 일 추가</button>
-    <label>준비물</label>
-    <div class="edit-list" id="edSupplies"></div>
-    <button class="addline" data-add="supplies">+ 준비물 추가</button>
-    <label>중요 알림</label>
-    <div class="edit-list" id="edNotes"></div>
-    <button class="addline" data-add="notes">+ 알림 추가</button>
+    <div id="editBody"></div>
+    <button class="addline" id="addEvent">+ 일정 추가</button>
     <button class="btn primary" id="btnSaveEdit">저장</button>
     <button class="btn ghost" id="btnCancelEdit">취소</button>
   </div>
@@ -237,7 +232,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v8 · 카드형';
+const APP_VERSION='v9 · 일정별 카드';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -352,22 +347,26 @@ function buildPrompt(){
 - 단, 이미지/문자에 '받은 날짜'나 타임스탬프(예: "8월 20일 목요일", "오전 11:35")가 보이면 그 날짜를 우선 기준으로 삼으세요. (예: 받은 날짜 8월 20일 + "내일 생일잔치" → 8월 21일)
 - 연도가 안 적혀 있으면 오늘 날짜의 연도로 추정하세요. 정말 알 수 없으면 null.
 
-[분류 규칙]
-- 생일잔치·현장학습·행사·수업·모임·상담처럼 '언제 일어나는 일'은 반드시 events에 넣고, date를 위 규칙대로 계산해 반드시 채우세요("내일" 같은 상대 표현도 실제 날짜로). 이런 일을 notes에만 넣지 마세요.
-- notes에는 날짜와 무관한 일반 안내만 넣으세요.
-- tasks(해야 할 일)와 supplies(준비물) 문구에는 날짜/요일을 넣지 마세요. 날짜는 events에만 넣습니다. (예: "9월 12일까지 활동비 납부" ❌ → "활동비 납부" ⭕)
+[분류·묶음 규칙 — 매우 중요]
+- 생일잔치·현장학습·행사·수업·모임·상담처럼 '언제 일어나는 일'은 events에 넣고 date를 반드시 채우세요("내일" 등 상대 표현도 실제 날짜로).
+- 각 할 일·준비물은 반드시 그 일정(event) 안의 tasks/supplies에 넣으세요. 일정이 여러 개면 관련 일정 각각에 나눠 넣습니다. 어느 일정과도 무관한 것만 최상위 tasks/supplies에 넣으세요.
+- tasks·supplies 문구에는 날짜/요일을 넣지 마세요(날짜는 event에만). 예: "9월 12일까지 활동비 납부" ❌ → "활동비 납부" ⭕
+- notes에는 날짜·일정과 무관한 일반 안내만 넣으세요.
 
 형식:
 {
-  "events": [{"title":"행사명","date":"YYYY-MM-DD 또는 null","time":"HH:MM 또는 null"}],
-  "tasks": ["부모가 해야 할 일"],
-  "supplies": ["아이가 챙겨갈 준비물"],
+  "events": [
+    {"title":"행사명","date":"YYYY-MM-DD 또는 null","time":"HH:MM 또는 null",
+     "tasks":["이 일정에 필요한 부모 할 일"],"supplies":["이 일정에 챙길 준비물"]}
+  ],
+  "tasks": ["특정 일정과 무관한 공용 할 일"],
+  "supplies": ["특정 일정과 무관한 공용 준비물"],
   "notes": ["기타 중요한 알림"]
 }
 해당 항목이 없으면 빈 배열. 설명 없이 JSON만 출력하세요.
 
-예시 — 입력(받은 날짜 8월 20일 목요일): "내일은 박소민 친구의 생일잔치가 진행됩니다. 작은 선물로 함께 축하해 주세요."
-출력: {"events":[{"title":"박소민 친구 생일잔치","date":"${today.slice(0,4)}-08-21","time":null}],"tasks":["작은 선물 준비"],"supplies":[],"notes":[]}`;
+예시 — 입력(받은 날짜 8월 26일): "8월 27일(목) 현장학습, 8월 28일(금) 체육활동이 있습니다. 두 날 모두 체육복과 운동화를 입혀 등원시켜 주세요."
+출력: {"events":[{"title":"현장학습","date":"${today.slice(0,4)}-08-27","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]},{"title":"체육활동","date":"${today.slice(0,4)}-08-28","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]}],"tasks":[],"supplies":[],"notes":[]}`;
 }
 
 async function requestGemini(model, parts){
@@ -433,17 +432,20 @@ function normalizeStructured(text){
   }
   const arr=v=>Array.isArray(v)?v:(v==null?[]:[v]);
   const str=v=>(typeof v==='string')?v:(v&&v.title)||(v&&v.name)||String(v??'');
-  // 최상위 {title,date,time} 단일 이벤트 형태도 흡수
-  let evSrc=o.events;
-  if(evSrc==null && o.title) evSrc={title:o.title,date:o.date,time:o.time};
+  // 최상위 {title,date,time,...} 단일 이벤트 형태도 흡수 (그 경우 공용 tasks/supplies는 그 일정에 귀속)
+  let evSrc=o.events, flatTasks=o.tasks, flatSup=o.supplies;
+  if(evSrc==null && o.title){ evSrc={title:o.title,date:o.date,time:o.time,tasks:o.tasks,supplies:o.supplies}; flatTasks=[]; flatSup=[]; }
   return {
     events: arr(evSrc).map(e=>({
       title: str(e.title||e.name||e),
-      date: e.date||null, time: e.time||null
+      date: e.date||null, time: e.time||null,
+      tasks: arr(e.tasks).map(str).filter(Boolean),      // 일정에 딸린 할 일
+      supplies: arr(e.supplies).map(str).filter(Boolean) // 일정에 딸린 준비물
     })).filter(e=>e.title),
-    tasks: arr(o.tasks).map(str).filter(Boolean),
-    supplies: arr(o.supplies).map(str).filter(Boolean),
+    tasks: arr(flatTasks).map(str).filter(Boolean),
+    supplies: arr(flatSup).map(str).filter(Boolean),
     notes: arr(o.notes).map(str).filter(Boolean),
+    done: {},
   };
 }
 
@@ -467,15 +469,18 @@ function render(){
     board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>위에서 어린이집 공지를 추가해 보세요.</div>`;
     return;
   }
-  // 공지(일정) 단위 카드: 일정 + 그에 딸린 할 일·준비물·알림을 함께. 날짜순, 지난 공지는 접기
-  const sorted=[...state.entries].sort((a,b)=>(entryDate(a)||'9999').localeCompare(entryDate(b)||'9999'));
-  const active=sorted.filter(en=>!isPast(en));
-  const past=sorted.filter(isPast).reverse();
-  let html=active.map(en=>entryCard(en,false)).join('')
+  // 일정 하나 = 카드 하나. 각 일정에 딸린 할 일·준비물이 그 카드에 붙는다. 날짜순, 지난 것은 접기
+  const cards=[];
+  state.entries.forEach(en=>entryCards(en).forEach(c=>cards.push(c)));
+  cards.sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  const active=cards.filter(c=>!(c.dd&&c.dd.diff<0));
+  const past=cards.filter(c=>c.dd&&c.dd.diff<0).reverse();
+
+  let html=active.map(c=>cardHtml(c,false)).join('')
     || `<div class="empty"><span class="em">✅</span>지금 챙길 공지가 없어요.</div>`;
-  // 중요 알림: 활성 공지들의 알림 모음 (별도 섹션)
+  // 중요 알림: 전부 지나지 않은 공지들의 알림 (별도 섹션)
   const noteItems=[];
-  active.forEach(en=>{ const d=entryDate(en);
+  state.entries.forEach(en=>{ if(isPast(en)) return; const d=entryDate(en);
     (en.structured.notes||[]).forEach(v=>noteItems.push({v,en,date:HAS_DATE.test(v)?null:d})); });
   if(noteItems.length){
     html+=`<div class="section" style="margin-top:6px"><h2>🔔 중요 알림</h2>`
@@ -485,43 +490,58 @@ function render(){
         }).join('')+`</div>`;
   }
   if(past.length){
-    html+=`<div class="section" style="margin-top:10px">`+toggleBtn('past','지난 공지',past.length)
-        + wrap('past', past.map(en=>entryCard(en,true)).join(''))+`</div>`;
+    html+=`<div class="section" style="margin-top:10px">`+toggleBtn('past','지난 일정',past.length)
+        + wrap('past', past.map(c=>cardHtml(c,true)).join(''))+`</div>`;
   }
   board.innerHTML=html;
   bindBoard();
   bindToggles(board);
 }
-// 공지가 '지난 것'인지: 일정이 있고 전부 과거일 때 (날짜 없는 공지는 안 지남)
+// 공지가 '지난 것'인지: 일정이 있고 전부 과거일 때 (알림 섹션 포함 여부 판단용)
 function isPast(en){
   const evs=en.structured.events||[];
   return evs.length>0 && evs.every(e=>{ const dd=dday(e.date); return dd&&dd.diff<0; });
 }
-// 공지 카드 하나: 일정(들) 헤더 + 할 일 + 준비물 + 알림
-function entryCard(en, past){
+// 한 공지를 '일정별 카드' 목록으로 분해 (일정마다 딸린 할 일·준비물을 함께)
+function entryCards(en){
   const s=en.structured, evs=s.events||[];
+  const gTasks=(s.tasks||[]), gSup=(s.supplies||[]);
+  const cards=[]; let generalUsed=false;
+  evs.forEach((e,ei)=>{
+    let tasks=(e.tasks||[]).map((t,ti)=>({text:t,key:'e'+ei+'t'+ti}));
+    let sup=(e.supplies||[]).slice();
+    // 호환: 단일 일정이고 일정에 딸린 게 없으면 공용(구버전 데이터)을 그 일정에 붙임
+    if(evs.length===1 && !tasks.length && !sup.length && (gTasks.length||gSup.length)){
+      tasks=gTasks.map((t,ti)=>({text:t,key:'g'+ti})); sup=gSup.slice(); generalUsed=true;
+    }
+    cards.push({en,date:e.date,dd:dday(e.date),title:e.title,time:e.time,tasks,supplies:sup,general:false});
+  });
+  if(!generalUsed && (evs.length===0 || gTasks.length || gSup.length)){
+    cards.push({en,date:entryDate(en),dd:null,title:null,time:null,general:true,
+      tasks:gTasks.map((t,ti)=>({text:t,key:'g'+ti})), supplies:gSup.slice()});
+  }
+  return cards;
+}
+// 카드 하나 그리기
+function cardHtml(c, past){
+  const en=c.en, done=en.structured.done||{};
   let head;
-  if(evs.length){
-    head=evs.map(e=>{
-      const dd=dday(e.date), meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
-      const badge=dd?`<span class="badge b-${dd.cls}">${dd.label}</span>`:'';
-      return `<div class="ev-head" data-edit><div class="title">${esc(e.title)}</div>${badge}</div>`
-           + (meta?`<div class="meta">${esc(meta)}</div>`:'');
-    }).join('<div style="height:8px"></div>');
+  if(!c.general){
+    const meta=[fmtDate(c.date),c.time].filter(Boolean).join(' · ');
+    const badge=c.dd?`<span class="badge b-${c.dd.cls}">${c.dd.label}</span>`:'';
+    head=`<div class="ev-head" data-edit><div class="title">${esc(c.title)}</div>${badge}</div>`
+       + (meta?`<div class="meta">${esc(meta)}</div>`:'');
   }else{
-    const d=entryDate(en);
-    head=`<div class="ev-head" data-edit><div class="meta">📌 ${d?esc(fmtDate(d)):'안내'}</div></div>`;
+    head=`<div class="ev-head" data-edit><div class="meta">📌 ${c.date?esc(fmtDate(c.date)):'안내'}</div></div>`;
   }
   let body='';
-  if(s.tasks&&s.tasks.length){
+  if(c.tasks.length){
     body+=`<div class="sub"><div class="sub-h">☑️ 해야 할 일</div>`
-      + s.tasks.map((v,i)=>{ const done=s.doneTasks&&s.doneTasks[i];
-          return `<div class="tsk ${done?'done':''}"><span class="chk sm" data-chk data-task="${i}">${done?'✓':''}</span><span class="tsk-t">${hlDates(esc(v))}</span></div>`;
-        }).join('')+`</div>`;
+      + c.tasks.map(t=>`<div class="tsk ${done[t.key]?'done':''}"><span class="chk sm" data-chk data-key="${t.key}">${done[t.key]?'✓':''}</span><span class="tsk-t">${hlDates(esc(t.text))}</span></div>`).join('')+`</div>`;
   }
-  if(s.supplies&&s.supplies.length){
+  if(c.supplies.length){
     body+=`<div class="sub"><div class="sub-h">🎒 준비물</div><div class="chips">`
-      + s.supplies.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+`</div></div>`;
+      + c.supplies.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+`</div></div>`;
   }
   const by=en.createdBy&&en.createdBy!=='나'?`<span class="by">${esc(en.createdBy)} 등록</span>`:'';
   return `<div class="item card ${past?'past':''}" data-en="${en.id}">
@@ -587,12 +607,10 @@ function bindBoard(){
         removeEntry(en.id); saveEntries(); render();
       }
     });
-    // 카드 안 여러 할 일 체크박스
+    // 카드 안 여러 할 일 체크박스 (일정별 key)
     el.querySelectorAll('[data-chk]').forEach(chk=>chk.addEventListener('click',()=>{
-      const i=+chk.dataset.task;
-      en.structured.doneTasks=en.structured.doneTasks||[];
-      en.structured.doneTasks[i]=!en.structured.doneTasks[i];
-      touch(en); saveEntries(); render();
+      const k=chk.dataset.key; const d=en.structured.done=en.structured.done||{};
+      d[k]=!d[k]; touch(en); saveEntries(); render();
     }));
     // 일정 헤더 탭 → 편집
     el.querySelectorAll('[data-edit]').forEach(h=>h.addEventListener('click',()=>openEdit(en)));
@@ -653,7 +671,7 @@ async function doAnalyze(){
   $('analyzing').style.display='block'; $('btnAnalyze').disabled=true;
   try{
     const structured=await analyze(parts);
-    structured.doneTasks=[];
+    structured.done=structured.done||{};
     state.entries.unshift({
       id:'e'+Date.now()+'_'+Math.random().toString(36).slice(2,7),  // 기기 간 충돌 없는 고유 id
       createdAt:new Date().toISOString(),
@@ -673,48 +691,66 @@ async function doAnalyze(){
 /* ================= 편집 흐름 ================= */
 let editing=null;
 function openEdit(en){
-  editing=en;
-  const s=en.structured;
-  $('edEvents').innerHTML=s.events.map((e,i)=>eventEditRow(e)).join('');
-  $('edTasks').innerHTML=s.tasks.map(v=>lineEditRow(v)).join('');
-  $('edSupplies').innerHTML=s.supplies.map(v=>lineEditRow(v)).join('');
-  $('edNotes').innerHTML=s.notes.map(v=>lineEditRow(v)).join('');
-  bindEditDel();
+  editing=en; const s=en.structured;
+  let html=(s.events||[]).map(eventBlock).join('');
+  html+=generalBlock(s.tasks||[], s.supplies||[]);
+  html+=notesBlock(s.notes||[]);
+  $('editBody').innerHTML=html;
+  bindEditControls();
   openModal('editModal');
 }
-function eventEditRow(e){
-  return `<div class="er" data-type="event">
-    <input type="text" class="ev-title" placeholder="행사명" value="${esc(e.title)}">
-    <input type="date" class="ev-date" value="${e.date||''}" style="max-width:140px">
-    <input type="time" class="ev-time" value="${e.time||''}" style="max-width:100px">
-    <button data-x>✕</button></div>`;
+function lineEditRow(v){ return `<div class="er"><input type="text" value="${esc(v)}"><button data-x>✕</button></div>`; }
+function eventBlock(e){
+  return `<div class="eblock" data-kind="event">
+    <div class="row"><input class="ev-title" placeholder="일정 이름" value="${esc(e.title||'')}"><button class="rm-block" title="일정 삭제">🗑️</button></div>
+    <div class="row"><input type="date" class="ev-date" value="${e.date||''}"><input type="time" class="ev-time" value="${e.time||''}"></div>
+    <div class="mini-h">이 일정 할 일</div><div class="lst tasks">${(e.tasks||[]).map(lineEditRow).join('')}</div>
+    <button class="addline addrow" data-for="tasks">+ 할 일</button>
+    <div class="mini-h">이 일정 준비물</div><div class="lst sup">${(e.supplies||[]).map(lineEditRow).join('')}</div>
+    <button class="addline addrow" data-for="sup">+ 준비물</button>
+  </div>`;
 }
-function lineEditRow(v){
-  return `<div class="er"><input type="text" value="${esc(v)}"><button data-x>✕</button></div>`;
+function generalBlock(tasks, sup){
+  return `<div class="eblock" data-kind="general">
+    <div class="mini-h">일정 없는 공용 할 일</div><div class="lst tasks">${tasks.map(lineEditRow).join('')}</div>
+    <button class="addline addrow" data-for="tasks">+ 할 일</button>
+    <div class="mini-h">공용 준비물</div><div class="lst sup">${sup.map(lineEditRow).join('')}</div>
+    <button class="addline addrow" data-for="sup">+ 준비물</button>
+  </div>`;
 }
-function bindEditDel(){
-  document.querySelectorAll('#editModal [data-x]').forEach(b=>{
-    b.onclick=()=>b.closest('.er').remove();
+function notesBlock(notes){
+  return `<div class="eblock" data-kind="notes">
+    <div class="mini-h">🔔 중요 알림</div><div class="lst notes">${notes.map(lineEditRow).join('')}</div>
+    <button class="addline addrow" data-for="notes">+ 알림</button>
+  </div>`;
+}
+function bindEditControls(){
+  const body=$('editBody');
+  body.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>b.closest('.er').remove());
+  body.querySelectorAll('.rm-block').forEach(b=>b.onclick=()=>b.closest('.eblock').remove());
+  body.querySelectorAll('.addrow').forEach(b=>b.onclick=()=>{
+    b.closest('.eblock').querySelector('.lst.'+b.dataset.for).insertAdjacentHTML('beforeend', lineEditRow(''));
+    bindEditControls();
   });
 }
-document.querySelectorAll('.addline').forEach(b=>{
-  b.onclick=()=>{
-    const map={events:'edEvents',tasks:'edTasks',supplies:'edSupplies',notes:'edNotes'};
-    const box=$(map[b.dataset.add]);
-    box.insertAdjacentHTML('beforeend', b.dataset.add==='events'?eventEditRow({title:'',date:null,time:null}):lineEditRow(''));
-    bindEditDel();
-  };
-});
+$('addEvent').onclick=()=>{ $('editBody').insertAdjacentHTML('afterbegin', eventBlock({title:'',date:null,time:null,tasks:[],supplies:[]})); bindEditControls(); };
 function saveEdit(){
   const s=editing.structured;
-  s.events=[...$('edEvents').children].map(r=>({
-    title:r.querySelector('.ev-title').value.trim(),
-    date:r.querySelector('.ev-date').value||null,
-    time:r.querySelector('.ev-time').value||null
-  })).filter(e=>e.title);
-  const lines=box=>[...$(box).children].map(r=>r.querySelector('input').value.trim()).filter(Boolean);
-  s.tasks=lines('edTasks'); s.supplies=lines('edSupplies'); s.notes=lines('edNotes');
-  s.doneTasks=(s.doneTasks||[]).slice(0,s.tasks.length);
+  const readLines=box=>[...box.querySelectorAll('.er input')].map(i=>i.value.trim()).filter(Boolean);
+  const events=[]; let gTasks=[], gSup=[], notes=[];
+  $('editBody').querySelectorAll('.eblock').forEach(bl=>{
+    const kind=bl.dataset.kind;
+    if(kind==='event'){
+      const title=bl.querySelector('.ev-title').value.trim(); if(!title) return;
+      events.push({ title, date:bl.querySelector('.ev-date').value||null, time:bl.querySelector('.ev-time').value||null,
+        tasks:readLines(bl.querySelector('.lst.tasks')), supplies:readLines(bl.querySelector('.lst.sup')) });
+    }else if(kind==='general'){
+      gTasks=readLines(bl.querySelector('.lst.tasks')); gSup=readLines(bl.querySelector('.lst.sup'));
+    }else if(kind==='notes'){
+      notes=readLines(bl.querySelector('.lst.notes'));
+    }
+  });
+  s.events=events; s.tasks=gTasks; s.supplies=gSup; s.notes=notes; s.done=s.done||{};
   touch(editing); saveEntries(); render(); closeModal('editModal'); toast('저장했어요');
 }
 
@@ -812,15 +848,20 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
 
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
-  const r=normalizeStructured('```json\n{"title":"현장학습","date":"2026-09-12","time":"08:30","tasks":[{"title":"물통 준비"},"모자 준비"],"notes":["08:30까지 등원"]}\n```');
+  const r=normalizeStructured('```json\n{"title":"현장학습","date":"2026-09-12","time":"08:30","tasks":["물통 준비","모자 준비"],"notes":["08:30까지 등원"]}\n```');
   console.assert(r.events.length===1 && r.events[0].title==='현장학습', 'event 파싱 실패(최상위 단일 이벤트)', r);
-  console.assert(r.tasks.length===2 && r.tasks[0]==='물통 준비', 'task(객체/문자 혼합) 파싱 실패', r);
-  console.assert(r.supplies.length===0, 'supplies 기본값 실패', r);
+  console.assert(r.events[0].tasks.length===2 && r.events[0].tasks[0]==='물통 준비', '최상위 tasks→일정 귀속 실패', r);
+  console.assert(r.tasks.length===0, '공용 tasks 비워짐 실패', r);
+  const rn=normalizeStructured('{"events":[{"title":"A","date":null,"tasks":["a1"]},{"title":"B","date":null,"tasks":["b1"]}]}');
+  console.assert(rn.events.length===2 && rn.events[1].tasks[0]==='b1', '중첩 events 파싱 실패', rn);
   const r2=normalizeStructured('설명 어쩌고 {"events":{"title":"단일객체","date":null},"tasks":[]} 뒤에 잡음');
   console.assert(r2.events.length===1 && r2.events[0].title==='단일객체', '단일객체/잡음 흡수 실패', r2);
   console.assert(fmtDate('2026-09-12')==='9월 12일 (토)', 'fmtDate 실패:'+fmtDate('2026-09-12'));
   document.body.insertAdjacentHTML('afterbegin','<div style="background:#2fa36b;color:#fff;padding:8px;text-align:center">selftest 통과 (콘솔 확인)</div>');
 }
+
+// 구버전 데이터 이관: doneTasks(배열) → done(객체, 공용 키 g{i})
+state.entries.forEach(en=>{ const s=en.structured; if(s && !s.done){ s.done={}; (s.doneTasks||[]).forEach((v,i)=>{ if(v) s.done['g'+i]=true; }); } });
 
 render();
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
