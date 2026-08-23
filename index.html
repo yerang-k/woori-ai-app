@@ -16,10 +16,10 @@
     line-height:1.5;padding-bottom:40px}
   header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);
     padding:14px 16px;display:flex;align-items:center;gap:10px;z-index:5}
-  header .baby{font-size:22px;background:var(--accent-soft);border-radius:50%;
-    width:38px;height:38px;display:flex;align-items:center;justify-content:center}
+  .baby{font-size:22px;background:var(--accent-soft);border-radius:50%;
+    width:38px;height:38px;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto}
+  .baby img{width:100%;height:100%;object-fit:cover}
   header .name{font-size:18px;font-weight:700;flex:1}
-  header .name:focus{outline:none;border-bottom:1px dashed var(--accent)}
   header button.icon{background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:4px}
   main{max-width:640px;margin:0 auto;padding:16px}
   .add-bar{display:flex;gap:10px;margin-bottom:18px}
@@ -57,6 +57,20 @@
   .b-past{background:#f0ece7;color:#a59b8f}
   .item.past{opacity:.5}
   .hl{color:#2f6fed;font-weight:700}
+  /* 공지 카드 */
+  .card{flex-direction:row}
+  .card .ev-head .title{font-size:16px}
+  .card .sub{margin-top:12px}
+  .card .sub-h{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:6px}
+  .tsk{display:flex;align-items:center;gap:9px;padding:5px 0}
+  .tsk .tsk-t{flex:1;font-size:15px}
+  .tsk.done .tsk-t{text-decoration:line-through;color:var(--sub)}
+  .chk.sm{width:20px;height:20px;font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{background:var(--accent-soft);color:#b5651d;border-radius:14px;padding:4px 11px;font-size:14px}
+  .note-l{font-size:14px;margin:4px 0;line-height:1.45}
+  .card-foot{margin-top:12px;display:flex;align-items:center;gap:10px}
+  .card-foot .by{font-size:12px;color:var(--sub);margin-left:auto}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -104,8 +118,8 @@
 </head>
 <body>
 <header>
-  <span class="baby">👦</span>
-  <div class="name" id="childName" contenteditable="true" spellcheck="false">우리 아이</div>
+  <span class="baby" id="babyAvatar">👦</span>
+  <div class="name" id="childName">우리 아이</div>
   <button class="icon" id="btnSettings" title="설정">⚙️</button>
 </header>
 
@@ -163,10 +177,30 @@
   </div>
 </div>
 
+<!-- 아이 정보 모달 -->
+<div class="modal-bg" id="childModal">
+  <div class="modal">
+    <h3>👦 아이 정보</h3>
+    <label>이름</label>
+    <input type="text" id="childNameInput" placeholder="아이 이름">
+    <label>사진</label>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
+      <span class="baby" id="childPhotoPreview" style="width:60px;height:60px;font-size:32px">👦</span>
+      <button type="button" class="btn ghost" id="btnPickPhoto" style="flex:1;margin:0">사진 선택</button>
+    </div>
+    <input type="file" id="childPhotoFile" accept="image/*" style="display:none">
+    <button class="btn primary" id="btnSaveChild">저장</button>
+    <button class="btn ghost" id="btnRemovePhoto">사진 제거</button>
+    <button class="btn ghost" id="btnCancelChild">취소</button>
+    <p class="hint" style="margin-top:10px">이름·사진은 이 기기에만 저장돼요.</p>
+  </div>
+</div>
+
 <!-- 설정 모달 (허브) -->
 <div class="modal-bg" id="settingsModal">
   <div class="modal">
     <h3>⚙️ 설정</h3>
+    <button class="setrow" id="setChild"><span class="ic">👦</span><span class="tx"><b>아이 정보</b><small id="setChildDesc">이름 · 사진</small></span><span class="ar">›</span></button>
     <button class="setrow" id="setFamily"><span class="ic">👨‍👩‍👧</span><span class="tx"><b>가족 공유</b><small id="setFamilyDesc">엄마·아빠가 함께 보기</small></span><span class="ar">›</span></button>
     <button class="setrow" id="setKey"><span class="ic">🔑</span><span class="tx"><b>Gemini API 키</b><small id="setKeyDesc">AI 정리에 필요</small></span><span class="ar">›</span></button>
     <button class="btn ghost" id="btnCloseSettings">닫기</button>
@@ -205,7 +239,8 @@
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
-  DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me'
+  DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me',
+  PHOTO:'wooriai_photo'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -216,6 +251,7 @@ const state = {
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
   syncKey: localStorage.getItem(LS.SYNCKEY) || '',
   me: localStorage.getItem(LS.ME) || '',   // 내 역할(엄마/아빠 등) — 등록자 표시용
+  photo: localStorage.getItem(LS.PHOTO) || '',  // 아이 사진(dataURL) — 이 기기 저장
 };
 // 저장 + (가족 연결돼 있으면) 동기화 예약
 function saveEntries(){
@@ -405,56 +441,80 @@ function hlDates(s){ return s.replace(DATE_RE,'<span class="hl">$1</span>'); }
 // 문장에 자체 날짜가 들어있는지(있으면 위쪽 날짜 줄 생략해 중복 방지)
 const HAS_DATE=/\d{1,2}\s?월\s?\d{1,2}\s?일|[월화수목금토일]요일|\d{1,2}:\d{2}|(오전|오후)\s?\d{1,2}\s?시|다음\s?주|이번\s?주|모레|내일|오늘/;
 
-function render(){
+function applyAvatar(){
   $('childName').textContent=state.childName;
+  $('babyAvatar').innerHTML=state.photo?`<img src="${state.photo}" alt="">`:'👦';
+}
+function render(){
+  applyAvatar();
   const board=$('board');
   if(state.entries.length===0){
     board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>위에서 어린이집 공지를 추가해 보세요.</div>`;
     return;
   }
-  // 모든 공지를 4개 섹션으로 집계. 할 일·준비물은 공지의 일정 날짜를 물려받음
-  const events=[], tasks=[], supplies=[], notes=[];
-  state.entries.forEach(en=>{
-    const d=entryDate(en);
-    en.structured.events.forEach(e=>events.push({e,en,dd:dday(e.date)}));
-    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i,date:HAS_DATE.test(v)?null:d}));
-    en.structured.supplies.forEach(v=>supplies.push({v,en,date:HAS_DATE.test(v)?null:d}));
-    en.structured.notes.forEach(v=>notes.push({v,en}));
-  });
-
-  // 일정: 다가옴 / 지남(접기)
-  const upEv=events.filter(o=>!o.dd||o.dd.diff>=0).sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
-  const pastEv=events.filter(o=>o.dd&&o.dd.diff<0).sort((a,b)=>(b.e.date||'').localeCompare(a.e.date||''));
-  // 할 일: 안 끝난 것 / 완료(체크)한 것(접기). 임박한 날짜 순
-  const isDone=o=>!!(o.en.structured.doneTasks&&o.en.structured.doneTasks[o.i]);
-  const openTasks=tasks.filter(o=>!isDone(o)).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  const doneT=tasks.filter(isDone);
-
-  let html='';
-  const evRows=upEv.map(({e,en,dd})=>eventRow(e,en,dd));
-  if(pastEv.length){ evRows.push(toggleBtn('evpast','지난 일정',pastEv.length)); evRows.push(wrap('evpast',pastEv.map(({e,en,dd})=>eventRow(e,en,dd)).join(''))); }
-  html+=section('📅 일정', evRows);
-
-  const taskRows=openTasks.map(o=>checkRow(o.en,o.i,o.v,o.date));
-  if(doneT.length){ taskRows.push(toggleBtn('donet','완료한 일',doneT.length)); taskRows.push(wrap('donet',doneT.map(o=>checkRow(o.en,o.i,o.v,o.date)).join(''))); }
-  html+=section('☑️ 해야 할 일', taskRows);
-
-  html+=section('🎒 준비물', supplies.map(o=>itemRow(o.en, withDate(esc(o.v),o.date))));
-  html+=section('🔔 중요 알림', notes.map(({v,en})=>itemRow(en,`<div class="title">${hlDates(esc(v))}</div>`)));
+  // 공지(일정) 단위 카드: 일정 + 그에 딸린 할 일·준비물·알림을 함께. 날짜순, 지난 공지는 접기
+  const sorted=[...state.entries].sort((a,b)=>(entryDate(a)||'9999').localeCompare(entryDate(b)||'9999'));
+  const active=sorted.filter(en=>!isPast(en));
+  const past=sorted.filter(isPast).reverse();
+  let html=active.map(en=>entryCard(en,false)).join('')
+    || `<div class="empty"><span class="em">✅</span>지금 챙길 공지가 없어요.</div>`;
+  if(past.length){
+    html+=`<div class="section" style="margin-top:10px">`+toggleBtn('past','지난 공지',past.length)
+        + wrap('past', past.map(en=>entryCard(en,true)).join(''))+`</div>`;
+  }
   board.innerHTML=html;
   bindBoard();
   bindToggles(board);
+}
+// 공지가 '지난 것'인지: 일정이 있고 전부 과거일 때 (날짜 없는 공지는 안 지남)
+function isPast(en){
+  const evs=en.structured.events||[];
+  return evs.length>0 && evs.every(e=>{ const dd=dday(e.date); return dd&&dd.diff<0; });
+}
+// 공지 카드 하나: 일정(들) 헤더 + 할 일 + 준비물 + 알림
+function entryCard(en, past){
+  const s=en.structured, evs=s.events||[];
+  let head;
+  if(evs.length){
+    head=evs.map(e=>{
+      const dd=dday(e.date), meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
+      const badge=dd?`<span class="badge b-${dd.cls}">${dd.label}</span>`:'';
+      return `<div class="ev-head" data-edit><div class="title">${esc(e.title)}</div>${badge}</div>`
+           + (meta?`<div class="meta">${esc(meta)}</div>`:'');
+    }).join('<div style="height:8px"></div>');
+  }else{
+    const d=entryDate(en);
+    head=`<div class="ev-head" data-edit><div class="meta">📌 ${d?esc(fmtDate(d)):'안내'}</div></div>`;
+  }
+  let body='';
+  if(s.tasks&&s.tasks.length){
+    body+=`<div class="sub"><div class="sub-h">☑️ 해야 할 일</div>`
+      + s.tasks.map((v,i)=>{ const done=s.doneTasks&&s.doneTasks[i];
+          return `<div class="tsk ${done?'done':''}"><span class="chk sm" data-chk data-task="${i}">${done?'✓':''}</span><span class="tsk-t">${hlDates(esc(v))}</span></div>`;
+        }).join('')+`</div>`;
+  }
+  if(s.supplies&&s.supplies.length){
+    body+=`<div class="sub"><div class="sub-h">🎒 준비물</div><div class="chips">`
+      + s.supplies.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+`</div></div>`;
+  }
+  if(s.notes&&s.notes.length){
+    body+=`<div class="sub"><div class="sub-h">🔔 중요 알림</div>`
+      + s.notes.map(v=>`<div class="note-l">${hlDates(esc(v))}</div>`).join('')+`</div>`;
+  }
+  const by=en.createdBy&&en.createdBy!=='나'?`<span class="by">${esc(en.createdBy)} 등록</span>`:'';
+  return `<div class="item card ${past?'past':''}" data-en="${en.id}">
+    <div class="body">${head}${body}
+      <div class="card-foot"><span class="src" data-raw>원문 보기</span>${by}</div>
+      <div class="raw">${rawHtml(en)}</div>
+    </div>
+    <button class="del" data-del title="삭제">✕</button>
+  </div>`;
 }
 const ymd=d=>{const x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;};
 // 공지의 대표 날짜(가장 이른 일정 날짜) — 할 일·준비물이 물려받음. 없으면 등록한 날
 function entryDate(en){
   const ds=(en.structured.events||[]).map(e=>e.date).filter(d=>d&&/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   return ds[0] || (en.createdAt?ymd(en.createdAt):null);
-}
-// 제목 + (있으면)날짜 줄
-function withDate(titleHtml, date){
-  const pre=date?`<span class="hl">${fmtDate(date)}</span> `:'';
-  return `<div class="title">${pre}${titleHtml}</div>`;
 }
 function toggleBtn(id,label,n){ return `<button class="group-toggle" data-toggle="${id}" data-label="${label}" data-n="${n}">${label} ${n}개 보기 ▾</button>`; }
 function wrap(id,inner){ return `<div class="past-wrap" data-wrap="${id}">${inner}</div>`; }
@@ -476,17 +536,6 @@ function dday(dateStr){
   if(diff<=7) return {label:'D-'+diff, cls:'soon', diff};
   return {label:'D-'+diff, cls:'far', diff};
 }
-function eventRow(e,en,dd){
-  const meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
-  const badge=dd?`<span class="badge b-${dd.cls}">${dd.label}</span>`:'';
-  const inner=`<div class="ev-head"><div class="title">${esc(e.title)}</div>${badge}</div>`+
-    (meta?`<div class="meta">${esc(meta)}</div>`:'');
-  return itemRow(en, inner, dd&&dd.cls==='past'?'past':'');
-}
-function section(title, rows){
-  if(rows.length===0) return '';
-  return `<div class="section"><h2>${title}</h2>${rows.join('')}</div>`;
-}
 // 원문 보기 내용: 이미지 있으면 사진, 텍스트 있으면 글, 둘 다면 둘 다
 function rawHtml(en){
   let h='';
@@ -494,27 +543,6 @@ function rawHtml(en){
   else if(en.source.image==='__local__') h+=`<div class="meta">📷 사진은 등록한 기기에만 있어요</div>`;
   if(en.source.rawText) h+=`<div${en.source.image?' style="margin-top:6px"':''}>${esc(en.source.rawText)}</div>`;
   return h||'(원문 없음)';
-}
-function itemRow(en, inner, cls=''){
-  return `<div class="item ${cls}" data-en="${en.id}">
-    <div class="body">${inner}
-      <span class="src" data-raw>원문 보기</span>
-      <div class="raw">${rawHtml(en)}</div>
-    </div>
-    <button class="del" data-del title="삭제">✕</button>
-  </div>`;
-}
-function checkRow(en,i,text,date){
-  const done=en.structured.doneTasks&&en.structured.doneTasks[i];
-  const pre=date?`<span class="hl">${fmtDate(date)}</span> `:'';
-  return `<div class="item ${done?'done':''}" data-en="${en.id}" data-task="${i}">
-    <div class="chk" data-chk>${done?'✓':''}</div>
-    <div class="body"><div class="title">${pre}${hlDates(esc(text))}</div>
-      <span class="src" data-raw>원문 보기</span>
-      <div class="raw">${rawHtml(en)}</div>
-    </div>
-    <button class="del" data-del title="삭제">✕</button>
-  </div>`;
 }
 function fmtDate(d){
   if(!d) return '';
@@ -528,6 +556,7 @@ function findEntry(id){ return state.entries.find(e=>e.id===id); }
 function bindBoard(){
   document.querySelectorAll('.item').forEach(el=>{
     const en=findEntry(el.dataset.en);
+    if(!en) return;
     el.querySelector('[data-raw]')?.addEventListener('click',()=>{
       el.querySelector('.raw').classList.toggle('open');
     });
@@ -536,17 +565,15 @@ function bindBoard(){
         removeEntry(en.id); saveEntries(); render();
       }
     });
-    el.querySelector('[data-chk]')?.addEventListener('click',()=>{
-      const i=+el.dataset.task;
+    // 카드 안 여러 할 일 체크박스
+    el.querySelectorAll('[data-chk]').forEach(chk=>chk.addEventListener('click',()=>{
+      const i=+chk.dataset.task;
       en.structured.doneTasks=en.structured.doneTasks||[];
       en.structured.doneTasks[i]=!en.structured.doneTasks[i];
       touch(en); saveEntries(); render();
-    });
-    // 항목 탭하면 편집(체크박스/삭제/원문 제외)
-    el.querySelector('.body .title')?.addEventListener('click',ev=>{
-      if(ev.target.closest('[data-raw]')) return;
-      openEdit(en);
-    });
+    }));
+    // 일정 헤더 탭 → 편집
+    el.querySelectorAll('[data-edit]').forEach(h=>h.addEventListener('click',()=>openEdit(en)));
   });
 }
 
@@ -693,6 +720,32 @@ $('btnSettings').onclick=()=>{
 $('btnCloseSettings').onclick=()=>closeModal('settingsModal');
 $('setKey').onclick=()=>{ closeModal('settingsModal'); openKeyModal(); };
 $('setFamily').onclick=()=>{ closeModal('settingsModal'); openFamily(); };
+$('setChild').onclick=()=>{ closeModal('settingsModal'); openChild(); };
+
+/* ---- 아이 정보(이름·사진) ---- */
+let pendingPhoto=null;
+function openChild(){
+  pendingPhoto=null;
+  $('childNameInput').value=state.childName==='우리 아이'?'':state.childName;
+  $('childPhotoPreview').innerHTML=state.photo?`<img src="${state.photo}" alt="">`:'👦';
+  openModal('childModal');
+}
+$('btnPickPhoto').onclick=()=>$('childPhotoFile').click();
+$('childPhotoFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ const r=await loadResized(f,256,0.8); pendingPhoto=r.dataUrl;
+    $('childPhotoPreview').innerHTML=`<img src="${pendingPhoto}" alt="">`;
+  }catch(err){ toast('사진을 불러오지 못했어요.'); }
+});
+$('btnRemovePhoto').onclick=()=>{ pendingPhoto=null; state.photo=''; localStorage.removeItem(LS.PHOTO);
+  $('childPhotoPreview').innerHTML='👦'; applyAvatar(); toast('사진을 제거했어요'); };
+$('btnSaveChild').onclick=()=>{
+  state.childName=$('childNameInput').value.trim()||'우리 아이';
+  localStorage.setItem(LS.NAME,state.childName);
+  if(pendingPhoto){ state.photo=pendingPhoto; localStorage.setItem(LS.PHOTO,state.photo); }
+  applyAvatar(); closeModal('childModal'); toast('저장했어요');
+};
+$('btnCancelChild').onclick=()=>closeModal('childModal');
 function openKeyModal(){ $('keyInput').value=state.apiKey; openModal('keyModal'); }
 $('btnSaveKey').onclick=()=>{
   state.apiKey=$('keyInput').value.trim(); localStorage.setItem(LS.KEY,state.apiKey);
@@ -729,10 +782,6 @@ $('btnCancelFamily').onclick=()=>closeModal('familyModal');
 // 앱이 열려 있는 동안 20초마다 상대 변경분 가져오기(보이는 상태일 때만)
 setInterval(()=>{ if(!document.hidden) syncNow(false); }, 20000);
 
-$('childName').addEventListener('blur',()=>{
-  state.childName=$('childName').textContent.trim()||'우리 아이';
-  localStorage.setItem(LS.NAME,state.childName); $('childName').textContent=state.childName;
-});
 document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
 });
