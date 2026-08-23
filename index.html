@@ -13,7 +13,7 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-    line-height:1.5;padding-bottom:40px}
+    line-height:1.5;padding-bottom:96px}
   header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);
     padding:14px 16px;display:flex;align-items:center;gap:10px;z-index:5}
   .baby{font-size:22px;background:var(--accent-soft);border-radius:50%;
@@ -22,12 +22,18 @@
   header .name{font-size:18px;font-weight:700;flex:1}
   header button.icon{background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:4px}
   main{max-width:640px;margin:0 auto;padding:16px}
-  .add-bar{display:flex;gap:10px;margin-bottom:18px}
-  .add-bar button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:14px;
-    padding:16px 8px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:var(--shadow);
-    display:flex;flex-direction:column;align-items:center;gap:6px}
-  .add-bar button .em{font-size:26px}
-  .add-bar button:active{transform:scale(.98)}
+  /* 공지 추가 FAB */
+  .fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:34px;line-height:1;border:none;cursor:pointer;z-index:16;
+    box-shadow:0 4px 14px rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;transition:transform .2s}
+  .fab.open{transform:rotate(45deg)}
+  .fab-menu{position:fixed;right:20px;bottom:92px;display:none;flex-direction:column;gap:10px;z-index:16;align-items:flex-end}
+  .fab-menu.open{display:flex}
+  .fab-item{background:var(--card);border:1px solid var(--line);border-radius:26px;padding:12px 18px;
+    font-size:15px;font-weight:600;box-shadow:var(--shadow);cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .fab-item span{font-size:20px}
+  .fab-scrim{position:fixed;inset:0;background:rgba(0,0,0,.12);display:none;z-index:15}
+  .fab-scrim.open{display:block}
   .section{margin-bottom:22px}
   .section h2{font-size:15px;margin:0 0 10px;color:var(--sub);font-weight:700}
   .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;
@@ -129,12 +135,16 @@
 </header>
 
 <main>
-  <div class="add-bar">
-    <button id="btnImage"><span class="em">📷</span>이미지 공지</button>
-    <button id="btnText"><span class="em">📝</span>텍스트 공지</button>
-  </div>
   <div id="board"></div>
 </main>
+
+<!-- 공지 추가 FAB -->
+<div class="fab-scrim" id="fabScrim"></div>
+<div class="fab-menu" id="fabMenu">
+  <button class="fab-item" id="fabImage"><span>📷</span> 이미지 공지</button>
+  <button class="fab-item" id="fabText"><span>📝</span> 텍스트 공지</button>
+</div>
+<button class="fab" id="fab" title="공지 추가">+</button>
 
 <!-- 입력 모달 -->
 <div class="modal-bg" id="inputModal">
@@ -232,7 +242,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v9 · 일정별 카드';
+const APP_VERSION='v10 · + 버튼';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -466,7 +476,7 @@ function render(){
   applyAvatar();
   const board=$('board');
   if(state.entries.length===0){
-    board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>위에서 어린이집 공지를 추가해 보세요.</div>`;
+    board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>오른쪽 아래 <b>+</b> 버튼으로 공지를 추가해 보세요.</div>`;
     return;
   }
   // 일정 하나 = 카드 하나. 각 일정에 딸린 할 일·준비물이 그 카드에 붙는다. 날짜순, 지난 것은 접기
@@ -763,8 +773,14 @@ function toast(msg){
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600);
 }
 
-$('btnImage').onclick=()=>openInput('image');
-$('btnText').onclick=()=>openInput('text');
+function toggleFab(force){
+  const on = (force===undefined) ? !$('fab').classList.contains('open') : force;
+  $('fab').classList.toggle('open',on); $('fabMenu').classList.toggle('open',on); $('fabScrim').classList.toggle('open',on);
+}
+$('fab').onclick=()=>toggleFab();
+$('fabScrim').onclick=()=>toggleFab(false);
+$('fabImage').onclick=()=>{ toggleFab(false); openInput('image'); };
+$('fabText').onclick=()=>{ toggleFab(false); openInput('text'); };
 $('btnAnalyze').onclick=doAnalyze;
 $('btnCancelInput').onclick=()=>closeModal('inputModal');
 $('btnSaveEdit').onclick=saveEdit;
