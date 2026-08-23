@@ -41,6 +41,10 @@
   .steps{margin:0;padding-left:20px}
   .steps li{margin:3px 0}
   .learn{background:var(--accent-soft);border-radius:10px;padding:9px 11px;font-size:14px}
+  .bookmark{background:none;border:none;font-size:22px;cursor:pointer;color:#e0a92e;padding:2px 4px;align-self:flex-start}
+  .saved-h{font-size:14px;font-weight:800;color:var(--sub);margin:2px 0 10px}
+  .maplink{display:inline-block;margin-top:8px;color:var(--accent);font-weight:700;font-size:14px;text-decoration:none}
+  .place-type{font-size:13px;color:var(--sub);margin-top:2px}
   /* 공지 추가 FAB */
   .fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;border-radius:50%;
     background:var(--accent);color:#fff;font-size:34px;line-height:1;border:none;cursor:pointer;z-index:16;
@@ -158,11 +162,13 @@
 
 <main>
   <div class="tabs">
-    <button class="tab on" data-tab="board">📋 공지·할일</button>
-    <button class="tab" data-tab="play">🎮 주말 놀이</button>
+    <button class="tab on" data-tab="board">📋 공지</button>
+    <button class="tab" data-tab="play">🎮 놀이</button>
+    <button class="tab" data-tab="place">📍 나들이</button>
   </div>
   <div id="boardView"><div id="board"></div></div>
   <div id="playView" style="display:none">
+    <div id="savedPlays"></div>
     <div class="play-panel">
       <div class="mini-h">아이 관심사</div>
       <div id="interestChips" class="chips edit"></div>
@@ -175,6 +181,20 @@
       <div id="playSpin" class="spinner" style="display:none">🤖 놀이를 궁리하는 중…</div>
     </div>
     <div id="playResults"></div>
+  </div>
+  <div id="placeView" style="display:none">
+    <div class="play-panel">
+      <div class="mini-h">우리 동네 (지역)</div>
+      <input type="text" id="regionInput" placeholder="예: 전주시 완산구">
+      <div class="row" style="margin-top:8px;gap:8px">
+        <select id="placePref"><option value="실내·실외 어디든">실내·실외 어디든</option><option value="실내(비/더위/추위)">실내(비·더위·추위)</option><option value="실외/자연">실외·자연</option></select>
+      </div>
+      <button class="btn primary" id="btnSuggestPlace" style="margin-top:12px">📍 갈 만한 곳 찾기</button>
+      <div id="placeSpin" class="spinner" style="display:none">🤖 근처를 살펴보는 중…</div>
+      <p class="hint" style="margin-top:8px">AI 추천이라 실제와 다를 수 있어요. 각 장소의 <b>지도에서 보기</b>로 꼭 확인하세요.</p>
+    </div>
+    <div id="savedPlaces"></div>
+    <div id="placeResults"></div>
   </div>
 </main>
 
@@ -282,13 +302,14 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v12 · 주말 놀이';
+const APP_VERSION='v13 · 놀이저장·나들이';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
   DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me',
   PHOTO:'wooriai_photo', METAAT:'wooriai_metaat',
-  INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions'
+  INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
+  SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -303,6 +324,9 @@ const state = {
   metaAt: +(localStorage.getItem(LS.METAAT) || 0),  // 이름·사진 마지막 변경 시각(가족 동기화용)
   interests: JSON.parse(localStorage.getItem(LS.INTERESTS) || '["포켓몬","파워레인저","그림","몸놀이"]'),
   reactions: JSON.parse(localStorage.getItem(LS.REACTIONS) || '[]'),  // 놀이 반응(개인화 대비)
+  saved: JSON.parse(localStorage.getItem(LS.SAVED) || '[]'),          // 저장한 놀이
+  region: localStorage.getItem(LS.REGION) || '',                      // 나들이 지역
+  savedPlaces: JSON.parse(localStorage.getItem(LS.SAVEDPLACES) || '[]'),
 };
 // 저장 + (가족 연결돼 있으면) 동기화 예약
 function saveEntries(){
@@ -917,10 +941,12 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
 function switchTab(tab){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   $('boardView').style.display = tab==='board'?'':'none';
-  $('playView').style.display = tab==='play'?'':'none';
+  $('playView').style.display  = tab==='play'?'':'none';
+  $('placeView').style.display = tab==='place'?'':'none';
   $('fab').style.display = tab==='board'?'':'none';
   toggleFab(false);
-  if(tab==='play') renderInterests();
+  if(tab==='play'){ renderInterests(); renderSavedPlays(); }
+  if(tab==='place'){ $('regionInput').value=state.region; renderSavedPlaces(); }
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
@@ -957,26 +983,28 @@ JSON만 출력:
   finally{ $('playSpin').style.display='none'; $('btnSuggestPlay').disabled=false; }
 }
 $('btnSuggestPlay').onclick=suggestPlays;
-function renderPlays(plays){
-  $('playResults').innerHTML = plays.map(p=>{
-    const sup=(p.supplies||[]).map(v=>`<span class="chip">${esc(v)}</span>`).join('');
-    const how=(p.how||[]).map(s=>`<li>${esc(s)}</li>`).join('');
-    const meta=[p.time,p.place].filter(Boolean).join(' · ');
-    const key=(p.title||'')+'';
-    const prev=state.reactions.find(r=>r.title===key);
-    const rb=(emo,val)=>`<button data-react="${val}" class="${prev&&prev.reaction===val?'on':''}">${emo}</button>`;
-    return `<div class="item card play-card" data-title="${esc(key)}">
-      <div class="body">
-        ${meta?`<div class="ev-top"><span class="hl">${esc(meta)}</span></div>`:''}
-        <div class="title">${esc(p.title||'놀이')}</div>
-        ${sup?`<div class="sub"><div class="sub-h">🧸 준비물</div><div class="chips">${sup}</div></div>`:''}
-        ${how?`<div class="sub"><div class="sub-h">▶️ 이렇게 놀아요</div><ol class="steps">${how}</ol></div>`:''}
-        ${p.learn?`<div class="sub"><div class="sub-h">💡 이렇게 배워요</div><div class="learn">${esc(p.learn)}</div></div>`:''}
-        <div class="react">${rb('❤️ 좋아요','like')}${rb('😐 보통','ok')}${rb('👎 별로','no')}</div>
-      </div>
-    </div>`;
-  }).join('');
-  $('playResults').querySelectorAll('.play-card').forEach(card=>{
+const isSavedPlay=key=>state.saved.some(s=>(s.title||'')===key);
+function playCardHtml(p){
+  const sup=(p.supplies||[]).map(v=>`<span class="chip">${esc(v)}</span>`).join('');
+  const how=(p.how||[]).map(s=>`<li>${esc(s)}</li>`).join('');
+  const meta=[p.time,p.place].filter(Boolean).join(' · ');
+  const key=(p.title||'')+'';
+  const prev=state.reactions.find(r=>r.title===key);
+  const rb=(emo,val)=>`<button data-react="${val}" class="${prev&&prev.reaction===val?'on':''}">${emo}</button>`;
+  return `<div class="item card play-card" data-title="${esc(key)}" data-play='${esc(JSON.stringify(p))}'>
+    <div class="body">
+      ${meta?`<div class="ev-top"><span class="hl">${esc(meta)}</span></div>`:''}
+      <div class="title">${esc(p.title||'놀이')}</div>
+      ${sup?`<div class="sub"><div class="sub-h">🧸 준비물</div><div class="chips">${sup}</div></div>`:''}
+      ${how?`<div class="sub"><div class="sub-h">▶️ 이렇게 놀아요</div><ol class="steps">${how}</ol></div>`:''}
+      ${p.learn?`<div class="sub"><div class="sub-h">💡 이렇게 배워요</div><div class="learn">${esc(p.learn)}</div></div>`:''}
+      <div class="react">${rb('❤️ 좋아요','like')}${rb('😐 보통','ok')}${rb('👎 별로','no')}</div>
+    </div>
+    <button class="bookmark" data-savebtn title="저장">${isSavedPlay(key)?'★':'☆'}</button>
+  </div>`;
+}
+function bindPlayCards(container){
+  container.querySelectorAll('.play-card').forEach(card=>{
     const title=card.dataset.title;
     card.querySelectorAll('[data-react]').forEach(b=>b.onclick=()=>{
       const val=b.dataset.react;
@@ -986,7 +1014,77 @@ function renderPlays(plays){
       card.querySelectorAll('[data-react]').forEach(x=>x.classList.toggle('on', x===b));
       toast(val==='like'?'좋아요로 기록했어요 ❤️':(val==='no'?'별로예요로 기록했어요':'기록했어요'));
     });
+    card.querySelector('[data-savebtn]')?.addEventListener('click',()=>toggleSavePlay(JSON.parse(card.dataset.play)));
   });
+}
+function toggleSavePlay(p){
+  const key=p.title||''; const i=state.saved.findIndex(s=>(s.title||'')===key);
+  if(i>=0){ state.saved.splice(i,1); toast('저장 해제했어요'); } else { state.saved.push(p); toast('놀이를 저장했어요 ⭐'); }
+  localStorage.setItem(LS.SAVED, JSON.stringify(state.saved));
+  renderSavedPlays();
+  document.querySelectorAll('#playResults .play-card').forEach(c=>{ const b=c.querySelector('[data-savebtn]'); if(b) b.textContent=isSavedPlay(c.dataset.title)?'★':'☆'; });
+}
+function renderPlays(plays){ $('playResults').innerHTML=plays.map(playCardHtml).join(''); bindPlayCards($('playResults')); }
+function renderSavedPlays(){
+  const box=$('savedPlays');
+  if(!state.saved.length){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="saved-h">⭐ 저장한 놀이 ${state.saved.length}</div>`+state.saved.map(playCardHtml).join('');
+  bindPlayCards(box);
+}
+
+/* ---- 나들이(가볼 곳) 추천 ---- */
+async function suggestPlaces(){
+  if(!state.apiKey){ toast('먼저 ⚙️ 설정 → API 키를 등록해 주세요.'); return; }
+  const region=$('regionInput').value.trim();
+  if(!region){ toast('지역을 입력해 주세요 (예: 전주시 완산구)'); return; }
+  state.region=region; localStorage.setItem(LS.REGION,region);
+  const pref=$('placePref').value;
+  const prompt=`만 4~5세 아이와 부모가 주말에 가볼 만한 곳을 "${region}" 근처에서 5곳 추천해줘.
+선호: ${pref}. 아이 관심사: ${state.interests.join(', ')}.
+실제로 있을 법한 구체적인 장소 위주로. JSON만:
+{"places":[{"name":"장소 이름","type":"키즈카페/공원/박물관 등 유형","why":"아이에게 좋은 이유 한 줄"}]}`;
+  $('placeSpin').style.display='block'; $('btnSuggestPlace').disabled=true; $('placeResults').innerHTML='';
+  try{
+    const o=parseJson(await callGeminiText([{text:prompt}]));
+    const places=(o.places||[]).slice(0,8);
+    if(!places.length){ toast('추천을 만들지 못했어요. 다시 시도해 주세요.'); return; }
+    renderPlaces(places);
+  }catch(err){ toast(err.message); }
+  finally{ $('placeSpin').style.display='none'; $('btnSuggestPlace').disabled=false; }
+}
+$('btnSuggestPlace').onclick=suggestPlaces;
+function mapUrl(name){ return 'https://map.naver.com/p/search/'+encodeURIComponent((state.region?state.region+' ':'')+name); }
+const isSavedPlace=key=>state.savedPlaces.some(s=>(s.name||'')===key);
+function placeCardHtml(pl){
+  const key=(pl.name||'')+'';
+  return `<div class="item card place-card" data-name="${esc(key)}" data-place='${esc(JSON.stringify(pl))}'>
+    <div class="body">
+      <div class="title">${esc(pl.name||'장소')}</div>
+      ${pl.type?`<div class="place-type">${esc(pl.type)}</div>`:''}
+      ${pl.why?`<div style="font-size:14px;margin-top:6px">${esc(pl.why)}</div>`:''}
+      <a class="maplink" href="${mapUrl(pl.name)}" target="_blank" rel="noopener">🗺️ 지도에서 보기 ›</a>
+    </div>
+    <button class="bookmark" data-savebtn title="저장">${isSavedPlace(key)?'★':'☆'}</button>
+  </div>`;
+}
+function bindPlaceCards(container){
+  container.querySelectorAll('.place-card').forEach(card=>{
+    card.querySelector('[data-savebtn]')?.addEventListener('click',()=>toggleSavePlace(JSON.parse(card.dataset.place)));
+  });
+}
+function toggleSavePlace(pl){
+  const key=pl.name||''; const i=state.savedPlaces.findIndex(s=>(s.name||'')===key);
+  if(i>=0){ state.savedPlaces.splice(i,1); toast('저장 해제했어요'); } else { state.savedPlaces.push(pl); toast('장소를 저장했어요 ⭐'); }
+  localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+  renderSavedPlaces();
+  document.querySelectorAll('#placeResults .place-card').forEach(c=>{ const b=c.querySelector('[data-savebtn]'); if(b) b.textContent=isSavedPlace(c.dataset.name)?'★':'☆'; });
+}
+function renderPlaces(places){ $('placeResults').innerHTML=places.map(placeCardHtml).join(''); bindPlaceCards($('placeResults')); }
+function renderSavedPlaces(){
+  const box=$('savedPlaces');
+  if(!state.savedPlaces.length){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="saved-h">⭐ 저장한 곳 ${state.savedPlaces.length}</div>`+state.savedPlaces.map(placeCardHtml).join('');
+  bindPlaceCards(box);
 }
 
 /* ================= 자체 점검 (?selftest) ================= */
