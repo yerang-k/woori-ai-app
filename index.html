@@ -57,7 +57,7 @@
   .b-past{background:#f0ece7;color:#a59b8f}
   .item.past{opacity:.5}
   .hl{color:#2f6fed;font-weight:700}
-  .past-extra{font-size:13px;color:var(--sub);margin-top:5px}
+  .task-date{font-size:13px;color:#2f6fed;font-weight:600;margin-top:3px}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -295,54 +295,56 @@ function render(){
     board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>위에서 어린이집 공지를 추가해 보세요.</div>`;
     return;
   }
-  // 공지(entry) 단위로 '지난 공지'와 '현재' 분리 — 지난 공지는 할 일·준비물까지 통째로 접힘
-  const pastEntries=state.entries.filter(entryPast);
-  const active=state.entries.filter(en=>!entryPast(en));
-
-  // 현재 공지들만 4개 섹션으로 집계
+  // 모든 공지를 4개 섹션으로 집계. 할 일·준비물은 공지의 일정 날짜를 물려받음
   const events=[], tasks=[], supplies=[], notes=[];
-  active.forEach(en=>{
+  state.entries.forEach(en=>{
+    const d=entryDate(en);
     en.structured.events.forEach(e=>events.push({e,en,dd:dday(e.date)}));
-    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i}));
-    en.structured.supplies.forEach(v=>supplies.push({v,en}));
+    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i,date:d}));
+    en.structured.supplies.forEach(v=>supplies.push({v,en,date:d}));
     en.structured.notes.forEach(v=>notes.push({v,en}));
   });
-  events.sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
+
+  // 일정: 다가옴 / 지남(접기)
+  const upEv=events.filter(o=>!o.dd||o.dd.diff>=0).sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
+  const pastEv=events.filter(o=>o.dd&&o.dd.diff<0).sort((a,b)=>(b.e.date||'').localeCompare(a.e.date||''));
+  // 할 일: 안 끝난 것 / 완료(체크)한 것(접기). 임박한 날짜 순
+  const isDone=o=>!!(o.en.structured.doneTasks&&o.en.structured.doneTasks[o.i]);
+  const openTasks=tasks.filter(o=>!isDone(o)).sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  const doneT=tasks.filter(isDone);
 
   let html='';
-  html+=section('📅 일정', events.map(({e,en,dd})=>eventRow(e,en,dd)));
-  html+=section('☑️ 해야 할 일', tasks.map(({v,en,i})=>checkRow(en,i,v)));
-  html+=section('🎒 준비물', supplies.map(({v,en})=>itemRow(en,`<div class="title">${esc(v)}</div>`)));
-  html+=section('🔔 중요 알림', notes.map(({v,en})=>itemRow(en,`<div class="title">${hlDates(esc(v))}</div>`)));
+  const evRows=upEv.map(({e,en,dd})=>eventRow(e,en,dd));
+  if(pastEv.length){ evRows.push(toggleBtn('evpast','지난 일정',pastEv.length)); evRows.push(wrap('evpast',pastEv.map(({e,en,dd})=>eventRow(e,en,dd)).join(''))); }
+  html+=section('📅 일정', evRows);
 
-  if(pastEntries.length){
-    html+=`<div class="section"><button class="group-toggle" data-pasttoggle>지난 공지 ${pastEntries.length}개 보기 ▾</button>`
-        + `<div class="past-wrap" data-pastwrap>${pastEntries.map(pastEntryCard).join('')}</div></div>`;
-  }
+  const taskRows=openTasks.map(o=>checkRow(o.en,o.i,o.v,o.date));
+  if(doneT.length){ taskRows.push(toggleBtn('donet','완료한 일',doneT.length)); taskRows.push(wrap('donet',doneT.map(o=>checkRow(o.en,o.i,o.v,o.date)).join(''))); }
+  html+=section('☑️ 해야 할 일', taskRows);
+
+  html+=section('🎒 준비물', supplies.map(o=>itemRow(o.en, withDate(esc(o.v),o.date))));
+  html+=section('🔔 중요 알림', notes.map(({v,en})=>itemRow(en,`<div class="title">${hlDates(esc(v))}</div>`)));
   board.innerHTML=html;
   bindBoard();
-  const pt=board.querySelector('[data-pasttoggle]');
-  if(pt) pt.onclick=()=>{
-    const w=board.querySelector('[data-pastwrap]'); const open=w.classList.toggle('open');
-    pt.textContent=open?'지난 공지 접기 ▴':`지난 공지 ${pastEntries.length}개 보기 ▾`;
-  };
+  bindToggles(board);
 }
-// 공지 하나가 '지난 것'인지: 일정이 있고, 그 일정이 전부 과거일 때만 (날짜 없는 공지는 안 지남)
-function entryPast(en){
-  const evs=en.structured.events||[];
-  if(!evs.length) return false;
-  return evs.every(e=>{ const d=dday(e.date); return d && d.diff<0; });
+// 공지의 대표 날짜(가장 이른 일정 날짜) — 할 일·준비물이 물려받음
+function entryDate(en){
+  const ds=(en.structured.events||[]).map(e=>e.date).filter(d=>d&&/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  return ds[0]||null;
 }
-// 지난 공지 카드: 일정 + 딸린 할 일·준비물·알림을 한 장에 요약
-function pastEntryCard(en){
-  const s=en.structured;
-  const evs=s.events.map(e=>{
-    const meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
-    return `<div class="title">${esc(e.title)}</div>`+(meta?`<div class="meta">${esc(meta)}</div>`:'');
-  }).join('');
-  const extra=[...s.tasks,...s.supplies,...s.notes];
-  const extraHtml=extra.length?`<div class="past-extra">${extra.map(esc).join(' · ')}</div>`:'';
-  return itemRow(en, evs+extraHtml, 'past');
+// 제목 + (있으면)날짜 줄
+function withDate(titleHtml, date){
+  return `<div class="title">${titleHtml}</div>`+(date?`<div class="task-date">${fmtDate(date)}</div>`:'');
+}
+function toggleBtn(id,label,n){ return `<button class="group-toggle" data-toggle="${id}" data-label="${label}" data-n="${n}">${label} ${n}개 보기 ▾</button>`; }
+function wrap(id,inner){ return `<div class="past-wrap" data-wrap="${id}">${inner}</div>`; }
+function bindToggles(board){
+  board.querySelectorAll('[data-toggle]').forEach(btn=>{
+    const w=board.querySelector(`[data-wrap="${btn.dataset.toggle}"]`);
+    btn.onclick=()=>{ const open=w.classList.toggle('open');
+      btn.textContent=open?`${btn.dataset.label} 접기 ▴`:`${btn.dataset.label} ${btn.dataset.n}개 보기 ▾`; };
+  });
 }
 /* 오늘 기준 D-day. 날짜 없으면 null */
 function dday(dateStr){
@@ -382,11 +384,12 @@ function itemRow(en, inner, cls=''){
     <button class="del" data-del title="삭제">✕</button>
   </div>`;
 }
-function checkRow(en,i,text){
+function checkRow(en,i,text,date){
   const done=en.structured.doneTasks&&en.structured.doneTasks[i];
+  const dstr=date?`<div class="task-date">${fmtDate(date)}</div>`:'';
   return `<div class="item ${done?'done':''}" data-en="${en.id}" data-task="${i}">
     <div class="chk" data-chk>${done?'✓':''}</div>
-    <div class="body"><div class="title">${hlDates(esc(text))}</div>
+    <div class="body"><div class="title">${hlDates(esc(text))}</div>${dstr}
       <span class="src" data-raw>원문 보기</span>
       <div class="raw">${rawHtml(en)}</div>
     </div>
