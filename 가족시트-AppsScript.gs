@@ -17,8 +17,9 @@
  *   "새 배포"를 또 만들면 URL이 바뀌어 기존 연결이 끊깁니다.
  */
 
-var SHEET_NAME = 'data';   // 항목 저장 시트
+var SHEET_NAME = 'data';    // 항목 저장 시트
 var DEL_NAME   = 'deleted'; // 삭제표시 저장 시트
+var META_NAME  = 'meta';    // 아이 이름·사진 저장 시트
 
 function KEY_() {
   return PropertiesService.getScriptProperties().getProperty('FAMILY_KEY') || '';
@@ -49,7 +50,11 @@ function read_() {
   for (var j = 1; j < dd.length; j++) {
     if (dd[j][0]) deleted[dd[j][0]] = Number(dd[j][1]) || 0;
   }
-  return { entries: entries, deleted: deleted };
+  var meta = { childName: '', photo: '', at: 0 };
+  var ms = sheet_(META_NAME, ['json']);
+  var mv = ms.getDataRange().getValues();
+  if (mv.length > 1 && mv[1][0]) { try { meta = JSON.parse(mv[1][0]); } catch (e) {} }
+  return { entries: entries, deleted: deleted, meta: meta };
 }
 
 // 저장소 통째로 다시 쓰기
@@ -64,6 +69,9 @@ function write_(state) {
   del.clearContents(); del.appendRow(['id', 'deletedAt']);
   var drows = Object.keys(state.deleted).map(function (id) { return [id, state.deleted[id]]; });
   if (drows.length) del.getRange(2, 1, drows.length, 2).setValues(drows);
+  var ms = sheet_(META_NAME, ['json']);
+  ms.clearContents(); ms.appendRow(['json']);
+  ms.getRange(2, 1).setValue(JSON.stringify(state.meta || { childName: '', photo: '', at: 0 }));
 }
 
 // 클라이언트와 동일한 병합 규칙 (id별 최신 우선 + 삭제표시). 서버에서도 합쳐 충돌 최소화.
@@ -81,7 +89,9 @@ function merge_(a, b) {
     var e = byId[k];
     if (!(deleted[e.id] && deleted[e.id] >= (e.updatedAt || 0))) entries.push(e);
   });
-  return { entries: entries, deleted: deleted };
+  var am = a.meta || { at: 0 }, bm = b.meta || { at: 0 };
+  var meta = (bm.at || 0) > (am.at || 0) ? bm : am;   // 이름·사진: 최근 변경 우선
+  return { entries: entries, deleted: deleted, meta: meta };
 }
 
 function doGet(e) {
@@ -97,7 +107,7 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch (err) { return json_({ ok: false, error: 'busy' }); }
   try {
-    var incoming = body.state || { entries: [], deleted: {} };
+    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 } };
     var merged = merge_(read_(), incoming);
     write_(merged);
     return json_({ ok: true, state: merged });

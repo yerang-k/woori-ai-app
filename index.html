@@ -58,9 +58,9 @@
   .item.past{opacity:.5}
   .hl{color:#2f6fed;font-weight:700}
   /* 공지 카드 */
-  .card{flex-direction:row}
+  .card{flex-direction:row;margin-bottom:16px;padding:14px 16px}
   .card .ev-head .title{font-size:16px}
-  .card .sub{margin-top:12px}
+  .card .sub{margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
   .card .sub-h{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:6px}
   .tsk{display:flex;align-items:center;gap:9px;padding:5px 0}
   .tsk .tsk-t{flex:1;font-size:15px}
@@ -192,7 +192,7 @@
     <button class="btn primary" id="btnSaveChild">저장</button>
     <button class="btn ghost" id="btnRemovePhoto">사진 제거</button>
     <button class="btn ghost" id="btnCancelChild">취소</button>
-    <p class="hint" style="margin-top:10px">이름·사진은 이 기기에만 저장돼요.</p>
+    <p class="hint" style="margin-top:10px">가족 공유를 연결하면 이름·사진도 엄마·아빠 폰에 함께 반영돼요.</p>
   </div>
 </div>
 
@@ -240,7 +240,7 @@
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
   DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me',
-  PHOTO:'wooriai_photo'
+  PHOTO:'wooriai_photo', METAAT:'wooriai_metaat'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -251,7 +251,8 @@ const state = {
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
   syncKey: localStorage.getItem(LS.SYNCKEY) || '',
   me: localStorage.getItem(LS.ME) || '',   // 내 역할(엄마/아빠 등) — 등록자 표시용
-  photo: localStorage.getItem(LS.PHOTO) || '',  // 아이 사진(dataURL) — 이 기기 저장
+  photo: localStorage.getItem(LS.PHOTO) || '',  // 아이 사진(dataURL)
+  metaAt: +(localStorage.getItem(LS.METAAT) || 0),  // 이름·사진 마지막 변경 시각(가족 동기화용)
 };
 // 저장 + (가족 연결돼 있으면) 동기화 예약
 function saveEntries(){
@@ -302,7 +303,10 @@ async function syncNow(manual){
   if(!syncConfigured() || syncing) return;
   syncing=true; setSyncStatus('동기화 중…');
   try{
-    const payload={ key:state.syncKey, state:{ entries:stripForSync(state.entries), deleted:state.deleted } };
+    const payload={ key:state.syncKey, state:{
+      entries:stripForSync(state.entries), deleted:state.deleted,
+      meta:{ childName:state.childName, photo:state.photo, at:state.metaAt }   // 이름·사진 공유
+    } };
     const res=await fetch(state.syncUrl, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, // 단순요청(CORS preflight 회피)
       body: JSON.stringify(payload)
@@ -313,6 +317,15 @@ async function syncNow(manual){
     state.entries=merged.entries; state.deleted=merged.deleted;
     localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
     localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
+    // 이름·사진: 상대가 더 최근에 바꿨으면 반영
+    const rmeta=data.state&&data.state.meta;
+    if(rmeta && (rmeta.at||0) > (state.metaAt||0)){
+      state.childName=rmeta.childName||state.childName;
+      state.photo=rmeta.photo||''; state.metaAt=rmeta.at;
+      localStorage.setItem(LS.NAME,state.childName);
+      state.photo?localStorage.setItem(LS.PHOTO,state.photo):localStorage.removeItem(LS.PHOTO);
+      localStorage.setItem(LS.METAAT,String(state.metaAt));
+    }
     render();
     setSyncStatus('동기화됨 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}));
     if(manual) toast('가족과 동기화했어요 ✨');
@@ -458,6 +471,17 @@ function render(){
   const past=sorted.filter(isPast).reverse();
   let html=active.map(en=>entryCard(en,false)).join('')
     || `<div class="empty"><span class="em">✅</span>지금 챙길 공지가 없어요.</div>`;
+  // 중요 알림: 활성 공지들의 알림 모음 (별도 섹션)
+  const noteItems=[];
+  active.forEach(en=>{ const d=entryDate(en);
+    (en.structured.notes||[]).forEach(v=>noteItems.push({v,en,date:HAS_DATE.test(v)?null:d})); });
+  if(noteItems.length){
+    html+=`<div class="section" style="margin-top:6px"><h2>🔔 중요 알림</h2>`
+      + noteItems.map(({v,en,date})=>{
+          const pre=date?`<span class="hl">${fmtDate(date)}</span> `:'';
+          return `<div class="item" data-en="${en.id}"><div class="body"><div class="title" data-edit>${pre}${hlDates(esc(v))}</div></div></div>`;
+        }).join('')+`</div>`;
+  }
   if(past.length){
     html+=`<div class="section" style="margin-top:10px">`+toggleBtn('past','지난 공지',past.length)
         + wrap('past', past.map(en=>entryCard(en,true)).join(''))+`</div>`;
@@ -496,10 +520,6 @@ function entryCard(en, past){
   if(s.supplies&&s.supplies.length){
     body+=`<div class="sub"><div class="sub-h">🎒 준비물</div><div class="chips">`
       + s.supplies.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+`</div></div>`;
-  }
-  if(s.notes&&s.notes.length){
-    body+=`<div class="sub"><div class="sub-h">🔔 중요 알림</div>`
-      + s.notes.map(v=>`<div class="note-l">${hlDates(esc(v))}</div>`).join('')+`</div>`;
   }
   const by=en.createdBy&&en.createdBy!=='나'?`<span class="by">${esc(en.createdBy)} 등록</span>`:'';
   return `<div class="item card ${past?'past':''}" data-en="${en.id}">
@@ -733,17 +753,18 @@ function openChild(){
 $('btnPickPhoto').onclick=()=>$('childPhotoFile').click();
 $('childPhotoFile').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return;
-  try{ const r=await loadResized(f,256,0.8); pendingPhoto=r.dataUrl;
+  try{ const r=await loadResized(f,200,0.72); pendingPhoto=r.dataUrl;   // 작게(가족 공유 용량 여유)
     $('childPhotoPreview').innerHTML=`<img src="${pendingPhoto}" alt="">`;
   }catch(err){ toast('사진을 불러오지 못했어요.'); }
 });
+function bumpMeta(){ state.metaAt=Date.now(); localStorage.setItem(LS.METAAT,String(state.metaAt)); scheduleSync(); }
 $('btnRemovePhoto').onclick=()=>{ pendingPhoto=null; state.photo=''; localStorage.removeItem(LS.PHOTO);
-  $('childPhotoPreview').innerHTML='👦'; applyAvatar(); toast('사진을 제거했어요'); };
+  $('childPhotoPreview').innerHTML='👦'; bumpMeta(); applyAvatar(); toast('사진을 제거했어요'); };
 $('btnSaveChild').onclick=()=>{
   state.childName=$('childNameInput').value.trim()||'우리 아이';
   localStorage.setItem(LS.NAME,state.childName);
   if(pendingPhoto){ state.photo=pendingPhoto; localStorage.setItem(LS.PHOTO,state.photo); }
-  applyAvatar(); closeModal('childModal'); toast('저장했어요');
+  bumpMeta(); applyAvatar(); closeModal('childModal'); toast('저장했어요');
 };
 $('btnCancelChild').onclick=()=>closeModal('childModal');
 function openKeyModal(){ $('keyInput').value=state.apiKey; openModal('keyModal'); }
