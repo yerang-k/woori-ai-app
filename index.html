@@ -186,25 +186,43 @@ async function requestGemini(model, parts){
   return res;
 }
 
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// 붐빔/일시장애(재시도로 풀림) vs 모델없음(다른 모델로) vs 그 외 판별
+const isOverload=(s,m)=>s===503||s===429||s===500||/overload|high demand|try again later|temporarily|unavailable/i.test(m);
+const isModelGone=(s,m)=>s===404||/not found|not supported|deprecated|no longer/i.test(m);
+function friendlyErr(status,msg){
+  if(/api key not valid|api_key_invalid|invalid.*key|permission|401|403/i.test(status+' '+msg))
+    return 'API 키가 올바르지 않은 것 같아요. 오른쪽 위 🔑에서 키를 다시 확인해 주세요.';
+  if(isOverload(status,msg))
+    return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 "AI로 정리하기"를 눌러 주세요.';
+  return 'AI 정리에 실패했어요. 잠시 후 다시 시도해 주세요.\n(' + (msg||('오류 '+status)).slice(0,120) + ')';
+}
+
 async function analyze(parts){
-  let lastErr='';
+  let lastStatus=0, lastMsg='';
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
-    let res;
-    try{ res=await requestGemini(m,parts); }
-    catch(e){ throw new Error('네트워크 오류: '+e.message); }
-    if(res.ok){
-      const data=await res.json();
-      const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
-      if(m!==state.model){ state.model=m; localStorage.setItem(LS.MODEL,m); }
-      return normalizeStructured(text);
+    for(let attempt=0; attempt<3; attempt++){          // 붐빔이면 같은 모델 재시도
+      let res;
+      try{ res=await requestGemini(m,parts); }
+      catch(e){ throw new Error('인터넷 연결이 불안정한 것 같아요. 연결을 확인하고 다시 시도해 주세요.'); }
+      if(res.ok){
+        const data=await res.json();
+        const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
+        if(m!==state.model){ state.model=m; localStorage.setItem(LS.MODEL,m); }
+        return normalizeStructured(text);
+      }
+      const err=await res.json().catch(()=>({}));
+      lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
+      if(isOverload(lastStatus,lastMsg)){
+        if(attempt<2){ await sleep(1500*(attempt+1)); continue; } // 1.5s→3s 후 재시도
+        break;                                                    // 계속 붐비면 다음 모델
+      }
+      if(isModelGone(lastStatus,lastMsg)) break;                  // 모델 교체
+      throw new Error(friendlyErr(lastStatus,lastMsg));           // 키 오류 등 즉시 안내
     }
-    const err=await res.json().catch(()=>({}));
-    lastErr=err?.error?.message||('HTTP '+res.status);
-    // 모델 사용 불가면 다음 모델 시도, 그 외 오류는 즉시 중단
-    if(res.status!==404 && !/not found|not supported|deprecated|unavailable/i.test(lastErr)) break;
   }
-  throw new Error(lastErr||'AI 호출 실패');
+  throw new Error(friendlyErr(lastStatus,lastMsg));
 }
 
 /* AI 응답(JSON 문자열)을 안전하게 정규화 — 코드펜스/누락/형태 차이 흡수 */
