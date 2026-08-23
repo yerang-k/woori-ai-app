@@ -99,6 +99,7 @@
 <header>
   <span class="baby">👦</span>
   <div class="name" id="childName" contenteditable="true" spellcheck="false">우리 아이</div>
+  <button class="icon" id="btnFamily" title="가족 공유">👨‍👩‍👧</button>
   <button class="icon" id="btnKey" title="API 키 설정">🔑</button>
 </header>
 
@@ -156,20 +157,118 @@
   </div>
 </div>
 
+<!-- 가족 공유 모달 -->
+<div class="modal-bg" id="familyModal">
+  <div class="modal">
+    <h3>👨‍👩‍👧 가족 공유</h3>
+    <p class="hint">엄마·아빠가 같은 아이 정보를 함께 봐요. 아이 사진(원본)은 공유되지 않고, 정리된 일정·할 일·준비물·알림만 공유됩니다.</p>
+
+    <label>나는 누구인가요? (등록자 표시용)</label>
+    <div class="row" id="meRow">
+      <button type="button" class="btn ghost me-opt" data-me="엄마">엄마</button>
+      <button type="button" class="btn ghost me-opt" data-me="아빠">아빠</button>
+    </div>
+
+    <label>가족 연결 — 웹앱 주소</label>
+    <input type="text" id="syncUrlInput" placeholder="https://script.google.com/.../exec">
+    <label>가족 키 (초대 코드)</label>
+    <input type="text" id="syncKeyInput" placeholder="가족끼리 정한 비밀 코드">
+    <div id="syncStatus" class="hint" style="margin-top:8px"></div>
+
+    <button class="btn primary" id="btnSaveFamily">연결하고 동기화</button>
+    <button class="btn ghost" id="btnSyncNow">지금 동기화</button>
+    <button class="btn ghost" id="btnInvite">아빠에게 초대코드 공유</button>
+    <button class="btn ghost" id="btnCancelFamily">닫기</button>
+    <p class="hint" style="margin-top:12px">아직 가족 시트가 없나요? 처음 한 번만 구글시트를 만들어 연결하면 됩니다 — 설정 방법은 대화로 안내해 드려요.</p>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 /* ================= 저장/상태 ================= */
 const LS = {
-  KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model'
+  KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
+  DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
   childName: localStorage.getItem(LS.NAME) || '우리 아이',
   model: localStorage.getItem(LS.MODEL) || 'gemini-2.5-flash',
   entries: JSON.parse(localStorage.getItem(LS.ENTRIES) || '[]'),
+  deleted: JSON.parse(localStorage.getItem(LS.DELETED) || '{}'),  // 삭제 표시 {id:시각} — 가족 동기화 병합용
+  syncUrl: localStorage.getItem(LS.SYNCURL) || '',
+  syncKey: localStorage.getItem(LS.SYNCKEY) || '',
+  me: localStorage.getItem(LS.ME) || '',   // 내 역할(엄마/아빠 등) — 등록자 표시용
 };
-function saveEntries(){ localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries)); }
+// 저장 + (가족 연결돼 있으면) 동기화 예약
+function saveEntries(){
+  localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
+  localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
+  scheduleSync();
+}
+function touch(en){ en.updatedAt=Date.now(); }
+function removeEntry(id){
+  state.entries=state.entries.filter(e=>e.id!==id);
+  state.deleted[id]=Date.now();   // 삭제 표시(다른 기기에도 삭제 전파)
+}
+
+/* ================= 가족 동기화 (구글시트 + GAS) ================= */
+let syncTimer=null, syncing=false;
+function syncConfigured(){ return !!(state.syncUrl && state.syncKey); }
+function scheduleSync(){
+  if(!syncConfigured()) return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>syncNow(false), 2500);   // 변경 후 2.5초 뒤 자동 업로드
+}
+function setSyncStatus(t){ const el=document.getElementById('syncStatus'); if(el) el.textContent=t; }
+// 동기화용으로 사진(용량 큼)은 빼고 보냄
+function stripForSync(entries){
+  return entries.map(en=>({...en, source:{...en.source, image: en.source.image?'__local__':null}}));
+}
+// 두 상태 병합: id별 updatedAt 최신 우선 + 삭제표시 반영 + 이 기기의 원본 사진 보존
+function mergeStates(a, b){
+  const deleted={...(a.deleted||{})};
+  for(const id in (b.deleted||{})) deleted[id]=Math.max(deleted[id]||0, b.deleted[id]);
+  const byId={}, localImg={};
+  [...(a.entries||[]), ...(b.entries||[])].forEach(e=>{
+    if(e.source && e.source.image && e.source.image!=='__local__') localImg[e.id]=e.source.image;
+    const cur=byId[e.id];
+    if(!cur || (e.updatedAt||0) > (cur.updatedAt||0)) byId[e.id]=e;
+  });
+  let entries=Object.values(byId).filter(e=>!(deleted[e.id] && deleted[e.id] >= (e.updatedAt||0)));
+  entries=entries.map(e=>{
+    const img=(e.source&&e.source.image);
+    if(localImg[e.id] && (!img || img==='__local__')) return {...e, source:{...e.source, image:localImg[e.id]}};
+    if(img==='__local__') return {...e, source:{...e.source, image:null}};
+    return e;
+  });
+  entries.sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
+  return {entries, deleted};
+}
+async function syncNow(manual){
+  if(!syncConfigured() || syncing) return;
+  syncing=true; setSyncStatus('동기화 중…');
+  try{
+    const payload={ key:state.syncKey, state:{ entries:stripForSync(state.entries), deleted:state.deleted } };
+    const res=await fetch(state.syncUrl, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, // 단순요청(CORS preflight 회피)
+      body: JSON.stringify(payload)
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error==='key'?'가족 키가 일치하지 않아요.':'동기화 실패: '+(data.error||''));
+    const merged=mergeStates({entries:state.entries, deleted:state.deleted}, data.state||{entries:[],deleted:{}});
+    state.entries=merged.entries; state.deleted=merged.deleted;
+    localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
+    localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
+    render();
+    setSyncStatus('동기화됨 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}));
+    if(manual) toast('가족과 동기화했어요 ✨');
+  }catch(err){
+    setSyncStatus('동기화 실패 — 연결 정보를 확인해 주세요.');
+    if(manual) toast(err.message);
+  }finally{ syncing=false; }
+}
 
 /* ================= Gemini 호출 ================= */
 const API_BASE='https://generativelanguage.googleapis.com/v1beta';
@@ -375,7 +474,8 @@ function section(title, rows){
 // 원문 보기 내용: 이미지 있으면 사진, 텍스트 있으면 글, 둘 다면 둘 다
 function rawHtml(en){
   let h='';
-  if(en.source.image) h+=`<img class="raw-img" src="${en.source.image}" loading="lazy">`;
+  if(en.source.image && en.source.image!=='__local__') h+=`<img class="raw-img" src="${en.source.image}" loading="lazy">`;
+  else if(en.source.image==='__local__') h+=`<div class="meta">📷 사진은 등록한 기기에만 있어요</div>`;
   if(en.source.rawText) h+=`<div${en.source.image?' style="margin-top:6px"':''}>${esc(en.source.rawText)}</div>`;
   return h||'(원문 없음)';
 }
@@ -417,14 +517,14 @@ function bindBoard(){
     });
     el.querySelector('[data-del]')?.addEventListener('click',()=>{
       if(confirm('이 공지를 삭제할까요? (원문·정리 내용 모두 삭제됩니다)')){
-        state.entries=state.entries.filter(e=>e.id!==en.id); saveEntries(); render();
+        removeEntry(en.id); saveEntries(); render();
       }
     });
     el.querySelector('[data-chk]')?.addEventListener('click',()=>{
       const i=+el.dataset.task;
       en.structured.doneTasks=en.structured.doneTasks||[];
       en.structured.doneTasks[i]=!en.structured.doneTasks[i];
-      saveEntries(); render();
+      touch(en); saveEntries(); render();
     });
     // 항목 탭하면 편집(체크박스/삭제/원문 제외)
     el.querySelector('.body .title')?.addEventListener('click',ev=>{
@@ -490,9 +590,10 @@ async function doAnalyze(){
     const structured=await analyze(parts);
     structured.doneTasks=[];
     state.entries.unshift({
-      id:'e'+Date.now(),
+      id:'e'+Date.now()+'_'+Math.random().toString(36).slice(2,7),  // 기기 간 충돌 없는 고유 id
       createdAt:new Date().toISOString(),
-      createdBy:'나',            // 가족 공유(V0.2+) 대비: 등록자 표시
+      updatedAt:Date.now(),
+      createdBy: state.me || '나',  // 가족 공유: 등록자(엄마/아빠)
       source:{ type: pendingImage?'image':'text', rawText: rawText||'', image: pendingImage?pendingImage.dataUrl:null },
       structured                  // 원문(source)과 AI 정리(structured)를 분리 저장
     });
@@ -549,7 +650,7 @@ function saveEdit(){
   const lines=box=>[...$(box).children].map(r=>r.querySelector('input').value.trim()).filter(Boolean);
   s.tasks=lines('edTasks'); s.supplies=lines('edSupplies'); s.notes=lines('edNotes');
   s.doneTasks=(s.doneTasks||[]).slice(0,s.tasks.length);
-  saveEntries(); render(); closeModal('editModal'); toast('저장했어요');
+  touch(editing); saveEntries(); render(); closeModal('editModal'); toast('저장했어요');
 }
 
 /* ================= 공통 UI ================= */
@@ -573,6 +674,36 @@ $('btnSaveKey').onclick=()=>{
   closeModal('keyModal'); toast(state.apiKey?'키를 저장했어요':'키를 비웠어요');
 };
 $('btnCancelKey').onclick=()=>closeModal('keyModal');
+
+/* ---- 가족 공유 ---- */
+function markMe(){ document.querySelectorAll('.me-opt').forEach(b=>b.classList.toggle('primary', b.dataset.me===state.me)); }
+$('btnFamily').onclick=()=>{
+  $('syncUrlInput').value=state.syncUrl; $('syncKeyInput').value=state.syncKey; markMe();
+  setSyncStatus(syncConfigured()?'연결됨':'아직 연결 안 됨');
+  openModal('familyModal');
+};
+document.querySelectorAll('.me-opt').forEach(b=>b.onclick=()=>{
+  state.me=b.dataset.me; localStorage.setItem(LS.ME,state.me); markMe();
+});
+$('btnSaveFamily').onclick=()=>{
+  state.syncUrl=$('syncUrlInput').value.trim(); state.syncKey=$('syncKeyInput').value.trim();
+  localStorage.setItem(LS.SYNCURL,state.syncUrl); localStorage.setItem(LS.SYNCKEY,state.syncKey);
+  if(!syncConfigured()){ toast('주소와 가족 키를 모두 입력해 주세요.'); return; }
+  syncNow(true);
+};
+$('btnSyncNow').onclick=()=>{ if(!syncConfigured()){ toast('먼저 가족 연결 정보를 입력해 주세요.'); return; } syncNow(true); };
+$('btnInvite').onclick=async()=>{
+  if(!syncConfigured()){ toast('먼저 연결하고 저장해 주세요.'); return; }
+  const msg=`[우리 아이 앱] 가족 공유 초대\n주소: ${state.syncUrl}\n가족 키: ${state.syncKey}\n\n앱에서 👨‍👩‍👧 → 이 주소와 키를 붙여넣으면 같은 정보를 함께 봐요.`;
+  try{
+    if(navigator.share){ await navigator.share({title:'우리 아이 앱 초대', text:msg}); }
+    else { await navigator.clipboard.writeText(msg); toast('초대 내용을 복사했어요. 붙여넣어 보내세요.'); }
+  }catch(e){ /* 공유 취소 무시 */ }
+};
+$('btnCancelFamily').onclick=()=>closeModal('familyModal');
+// 앱이 열려 있는 동안 20초마다 상대 변경분 가져오기(보이는 상태일 때만)
+setInterval(()=>{ if(!document.hidden) syncNow(false); }, 20000);
+
 $('childName').addEventListener('blur',()=>{
   state.childName=$('childName').textContent.trim()||'우리 아이';
   localStorage.setItem(LS.NAME,state.childName); $('childName').textContent=state.childName;
@@ -595,6 +726,7 @@ function selftest(){
 
 render();
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
+if(syncConfigured()) syncNow(false);   // 열 때 가족 변경분 가져오기
 if(location.search.includes('selftest')) selftest();
 </script>
 </body>
