@@ -22,6 +22,25 @@
   header .name{font-size:18px;font-weight:700;flex:1}
   header button.icon{background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);padding:4px}
   main{max-width:640px;margin:0 auto;padding:16px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+  .tab{flex:1;border:1px solid var(--line);background:var(--card);border-radius:22px;padding:10px;
+    font-size:14px;font-weight:700;cursor:pointer;color:var(--sub)}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .play-panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+    box-shadow:var(--shadow);margin-bottom:16px}
+  .play-panel input,.play-panel select{width:100%;border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;font-size:15px;font-family:inherit;background:var(--card);color:var(--text)}
+  .play-panel .row select{flex:1}
+  .chips.edit{display:flex;flex-wrap:wrap;gap:6px}
+  .chips.edit .chip{display:inline-flex;align-items:center;gap:6px}
+  .chips.edit .chip b{cursor:pointer;color:#b5651d;font-weight:800}
+  .play-card .react{display:flex;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+  .play-card .react button{flex:1;border:1px solid var(--line);background:var(--bg);border-radius:12px;
+    padding:9px;font-size:18px;cursor:pointer}
+  .play-card .react button.on{background:var(--accent-soft);border-color:var(--accent)}
+  .steps{margin:0;padding-left:20px}
+  .steps li{margin:3px 0}
+  .learn{background:var(--accent-soft);border-radius:10px;padding:9px 11px;font-size:14px}
   /* 공지 추가 FAB */
   .fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;border-radius:50%;
     background:var(--accent);color:#fff;font-size:34px;line-height:1;border:none;cursor:pointer;z-index:16;
@@ -138,7 +157,25 @@
 </header>
 
 <main>
-  <div id="board"></div>
+  <div class="tabs">
+    <button class="tab on" data-tab="board">📋 공지·할일</button>
+    <button class="tab" data-tab="play">🎮 주말 놀이</button>
+  </div>
+  <div id="boardView"><div id="board"></div></div>
+  <div id="playView" style="display:none">
+    <div class="play-panel">
+      <div class="mini-h">아이 관심사</div>
+      <div id="interestChips" class="chips edit"></div>
+      <input type="text" id="interestAdd" placeholder="관심사 추가하고 Enter (예: 공룡)" style="margin-top:8px">
+      <div class="row" style="margin-top:8px;gap:8px">
+        <select id="playPlace"><option value="실내·실외 어디든">실내·실외 어디든</option><option value="실내">실내</option><option value="실외">실외</option></select>
+        <select id="playTime"><option>약 15분</option><option selected>약 30분</option><option>1시간 이상</option></select>
+      </div>
+      <button class="btn primary" id="btnSuggestPlay" style="margin-top:12px">🎲 놀이 추천받기</button>
+      <div id="playSpin" class="spinner" style="display:none">🤖 놀이를 궁리하는 중…</div>
+    </div>
+    <div id="playResults"></div>
+  </div>
 </main>
 
 <!-- 공지 추가 FAB -->
@@ -245,12 +282,13 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v11 · 날짜 위';
+const APP_VERSION='v12 · 주말 놀이';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
   DELETED:'wooriai_deleted', SYNCURL:'wooriai_syncurl', SYNCKEY:'wooriai_synckey', ME:'wooriai_me',
-  PHOTO:'wooriai_photo', METAAT:'wooriai_metaat'
+  PHOTO:'wooriai_photo', METAAT:'wooriai_metaat',
+  INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -263,6 +301,8 @@ const state = {
   me: localStorage.getItem(LS.ME) || '',   // 내 역할(엄마/아빠 등) — 등록자 표시용
   photo: localStorage.getItem(LS.PHOTO) || '',  // 아이 사진(dataURL)
   metaAt: +(localStorage.getItem(LS.METAAT) || 0),  // 이름·사진 마지막 변경 시각(가족 동기화용)
+  interests: JSON.parse(localStorage.getItem(LS.INTERESTS) || '["포켓몬","파워레인저","그림","몸놀이"]'),
+  reactions: JSON.parse(localStorage.getItem(LS.REACTIONS) || '[]'),  // 놀이 반응(개인화 대비)
 };
 // 저장 + (가족 연결돼 있으면) 동기화 예약
 function saveEntries(){
@@ -406,7 +446,8 @@ function friendlyErr(status,msg){
   return 'AI 정리에 실패했어요. 잠시 후 다시 시도해 주세요.\n(' + (msg||('오류 '+status)).slice(0,120) + ')';
 }
 
-async function analyze(parts){
+// Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
+async function callGeminiText(parts){
   let lastStatus=0, lastMsg='';
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
@@ -418,7 +459,7 @@ async function analyze(parts){
         const data=await res.json();
         const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
         if(m!==state.model){ state.model=m; localStorage.setItem(LS.MODEL,m); }
-        return normalizeStructured(text);
+        return text;
       }
       const err=await res.json().catch(()=>({}));
       lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
@@ -431,6 +472,12 @@ async function analyze(parts){
     }
   }
   throw new Error(friendlyErr(lastStatus,lastMsg));
+}
+async function analyze(parts){ return normalizeStructured(await callGeminiText(parts)); }
+// JSON 응답을 안전 파싱 (코드펜스/잡음 흡수)
+function parseJson(text){
+  let t=(text||'').trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  try{ return JSON.parse(t); }catch(e){ const m=t.match(/\{[\s\S]*\}/); if(!m) throw new Error('AI 응답을 이해하지 못했어요.'); return JSON.parse(m[0]); }
 }
 
 /* AI 응답(JSON 문자열)을 안전하게 정규화 — 코드펜스/누락/형태 차이 흡수 */
@@ -464,7 +511,7 @@ function normalizeStructured(text){
 
 /* ================= 렌더 ================= */
 const $=id=>document.getElementById(id);
-function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 // 문장 속 날짜/요일/시간을 파랗게 강조 (esc 처리된 문자열에 적용)
 const DATE_RE=/(\d{1,2}\s?월\s?\d{1,2}\s?일(\s?\([월화수목금토일]\))?|[월화수목금토일]요일|(오전|오후)\s?\d{1,2}\s?시(\s?\d{1,2}\s?분)?|\d{1,2}:\d{2}|다음\s?주|이번\s?주|모레|내일|오늘)/g;
 function hlDates(s){ return s.replace(DATE_RE,'<span class="hl">$1</span>'); }
@@ -865,6 +912,82 @@ setInterval(()=>{ if(!document.hidden) syncNow(false); }, 20000);
 document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
 });
+
+/* ================= 주말 놀이 추천 (V0.5) ================= */
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  $('boardView').style.display = tab==='board'?'':'none';
+  $('playView').style.display = tab==='play'?'':'none';
+  $('fab').style.display = tab==='board'?'':'none';
+  toggleFab(false);
+  if(tab==='play') renderInterests();
+}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
+function renderInterests(){
+  $('interestChips').innerHTML = state.interests.map((v,i)=>`<span class="chip">${esc(v)} <b data-ri="${i}">✕</b></span>`).join('')
+    || `<span class="hint">관심사를 추가해 주세요</span>`;
+  $('interestChips').querySelectorAll('[data-ri]').forEach(x=>x.onclick=()=>{
+    state.interests.splice(+x.dataset.ri,1); saveInterests(); renderInterests();
+  });
+}
+$('interestAdd').addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return; e.preventDefault();
+  const v=e.target.value.trim(); if(!v) return;
+  if(!state.interests.includes(v)) state.interests.push(v);
+  saveInterests(); e.target.value=''; renderInterests();
+});
+async function suggestPlays(){
+  if(!state.apiKey){ toast('먼저 ⚙️ 설정 → API 키를 등록해 주세요.'); return; }
+  if(!state.interests.length){ toast('아이 관심사를 하나 이상 추가해 주세요.'); return; }
+  const place=$('playPlace').value, time=$('playTime').value;
+  const prompt=`너는 유아 놀이·학습 도우미야. 만 4~5세 아이를 위한 주말 놀이 3가지를 제안해.
+아이 관심사: ${state.interests.join(', ')}. 장소: ${place}. 놀이 시간: ${time}.
+아이가 좋아하는 것에서 출발해 자연스럽게 숫자·한글·그림·신체활동 중 하나를 익히게 해줘.
+집에 흔히 있는 준비물만 쓰고, 부모가 바로 따라 할 수 있게 쉽게.
+JSON만 출력:
+{"plays":[{"title":"놀이 이름","time":"${time}","place":"${place}","supplies":["준비물"],"how":["1단계","2단계","3단계"],"learn":"이 놀이로 자연스럽게 배우는 것"}]}`;
+  $('playSpin').style.display='block'; $('btnSuggestPlay').disabled=true; $('playResults').innerHTML='';
+  try{
+    const o=parseJson(await callGeminiText([{text:prompt}]));
+    const plays=(o.plays||[]).slice(0,5);
+    if(!plays.length){ toast('추천을 만들지 못했어요. 다시 시도해 주세요.'); return; }
+    renderPlays(plays);
+  }catch(err){ toast(err.message); }
+  finally{ $('playSpin').style.display='none'; $('btnSuggestPlay').disabled=false; }
+}
+$('btnSuggestPlay').onclick=suggestPlays;
+function renderPlays(plays){
+  $('playResults').innerHTML = plays.map(p=>{
+    const sup=(p.supplies||[]).map(v=>`<span class="chip">${esc(v)}</span>`).join('');
+    const how=(p.how||[]).map(s=>`<li>${esc(s)}</li>`).join('');
+    const meta=[p.time,p.place].filter(Boolean).join(' · ');
+    const key=(p.title||'')+'';
+    const prev=state.reactions.find(r=>r.title===key);
+    const rb=(emo,val)=>`<button data-react="${val}" class="${prev&&prev.reaction===val?'on':''}">${emo}</button>`;
+    return `<div class="item card play-card" data-title="${esc(key)}">
+      <div class="body">
+        ${meta?`<div class="ev-top"><span class="hl">${esc(meta)}</span></div>`:''}
+        <div class="title">${esc(p.title||'놀이')}</div>
+        ${sup?`<div class="sub"><div class="sub-h">🧸 준비물</div><div class="chips">${sup}</div></div>`:''}
+        ${how?`<div class="sub"><div class="sub-h">▶️ 이렇게 놀아요</div><ol class="steps">${how}</ol></div>`:''}
+        ${p.learn?`<div class="sub"><div class="sub-h">💡 이렇게 배워요</div><div class="learn">${esc(p.learn)}</div></div>`:''}
+        <div class="react">${rb('❤️ 좋아요','like')}${rb('😐 보통','ok')}${rb('👎 별로','no')}</div>
+      </div>
+    </div>`;
+  }).join('');
+  $('playResults').querySelectorAll('.play-card').forEach(card=>{
+    const title=card.dataset.title;
+    card.querySelectorAll('[data-react]').forEach(b=>b.onclick=()=>{
+      const val=b.dataset.react;
+      state.reactions=state.reactions.filter(r=>r.title!==title);
+      state.reactions.push({title, reaction:val, interests:[...state.interests], at:Date.now()});
+      localStorage.setItem(LS.REACTIONS, JSON.stringify(state.reactions));
+      card.querySelectorAll('[data-react]').forEach(x=>x.classList.toggle('on', x===b));
+      toast(val==='like'?'좋아요로 기록했어요 ❤️':(val==='no'?'별로예요로 기록했어요':'기록했어요'));
+    });
+  });
+}
 
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
