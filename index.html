@@ -57,6 +57,7 @@
   .b-past{background:#f0ece7;color:#a59b8f}
   .item.past{opacity:.5}
   .hl{color:#2f6fed;font-weight:700}
+  .past-extra{font-size:13px;color:var(--sub);margin-top:5px}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -294,38 +295,54 @@ function render(){
     board.innerHTML=`<div class="empty"><span class="em">📭</span>아직 정리된 공지가 없어요.<br>위에서 어린이집 공지를 추가해 보세요.</div>`;
     return;
   }
-  // 모든 entry를 4개 섹션으로 집계
+  // 공지(entry) 단위로 '지난 공지'와 '현재' 분리 — 지난 공지는 할 일·준비물까지 통째로 접힘
+  const pastEntries=state.entries.filter(entryPast);
+  const active=state.entries.filter(en=>!entryPast(en));
+
+  // 현재 공지들만 4개 섹션으로 집계
   const events=[], tasks=[], supplies=[], notes=[];
-  state.entries.forEach(en=>{
-    en.structured.events.forEach((e,i)=>events.push({e,en,i}));
-    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i,kind:'tasks'}));
-    en.structured.supplies.forEach((v,i)=>supplies.push({v,en,i,kind:'supplies'}));
-    en.structured.notes.forEach((v,i)=>notes.push({v,en,i,kind:'notes'}));
+  active.forEach(en=>{
+    en.structured.events.forEach(e=>events.push({e,en,dd:dday(e.date)}));
+    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i}));
+    en.structured.supplies.forEach(v=>supplies.push({v,en}));
+    en.structured.notes.forEach(v=>notes.push({v,en}));
   });
-  // 일정: D-day 계산 → 다가옴 / 지남 분리
-  events.forEach(o=>{ o.dd=dday(o.e.date); });
-  const upcoming=events.filter(o=>!o.dd||o.dd.diff>=0)
-    .sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
-  const past=events.filter(o=>o.dd&&o.dd.diff<0)
-    .sort((a,b)=>(b.e.date||'').localeCompare(a.e.date||''));
+  events.sort((a,b)=>(a.e.date||'9999').localeCompare(b.e.date||'9999'));
 
   let html='';
-  const evRows=upcoming.map(({e,en,dd})=>eventRow(e,en,dd));
-  if(past.length){
-    evRows.push(`<button class="group-toggle" data-pasttoggle>지난 일정 ${past.length}개 보기 ▾</button>`);
-    evRows.push(`<div class="past-wrap" data-pastwrap>${past.map(({e,en,dd})=>eventRow(e,en,dd)).join('')}</div>`);
-  }
-  html+=section('📅 일정', evRows);
+  html+=section('📅 일정', events.map(({e,en,dd})=>eventRow(e,en,dd)));
   html+=section('☑️ 해야 할 일', tasks.map(({v,en,i})=>checkRow(en,i,v)));
   html+=section('🎒 준비물', supplies.map(({v,en})=>itemRow(en,`<div class="title">${esc(v)}</div>`)));
   html+=section('🔔 중요 알림', notes.map(({v,en})=>itemRow(en,`<div class="title">${hlDates(esc(v))}</div>`)));
+
+  if(pastEntries.length){
+    html+=`<div class="section"><button class="group-toggle" data-pasttoggle>지난 공지 ${pastEntries.length}개 보기 ▾</button>`
+        + `<div class="past-wrap" data-pastwrap>${pastEntries.map(pastEntryCard).join('')}</div></div>`;
+  }
   board.innerHTML=html;
   bindBoard();
   const pt=board.querySelector('[data-pasttoggle]');
   if(pt) pt.onclick=()=>{
     const w=board.querySelector('[data-pastwrap]'); const open=w.classList.toggle('open');
-    pt.textContent=open?'지난 일정 접기 ▴':`지난 일정 ${past.length}개 보기 ▾`;
+    pt.textContent=open?'지난 공지 접기 ▴':`지난 공지 ${pastEntries.length}개 보기 ▾`;
   };
+}
+// 공지 하나가 '지난 것'인지: 일정이 있고, 그 일정이 전부 과거일 때만 (날짜 없는 공지는 안 지남)
+function entryPast(en){
+  const evs=en.structured.events||[];
+  if(!evs.length) return false;
+  return evs.every(e=>{ const d=dday(e.date); return d && d.diff<0; });
+}
+// 지난 공지 카드: 일정 + 딸린 할 일·준비물·알림을 한 장에 요약
+function pastEntryCard(en){
+  const s=en.structured;
+  const evs=s.events.map(e=>{
+    const meta=[fmtDate(e.date),e.time].filter(Boolean).join(' · ');
+    return `<div class="title">${esc(e.title)}</div>`+(meta?`<div class="meta">${esc(meta)}</div>`:'');
+  }).join('');
+  const extra=[...s.tasks,...s.supplies,...s.notes];
+  const extraHtml=extra.length?`<div class="past-extra">${extra.map(esc).join(' · ')}</div>`:'';
+  return itemRow(en, evs+extraHtml, 'past');
 }
 /* 오늘 기준 D-day. 날짜 없으면 null */
 function dday(dateStr){
