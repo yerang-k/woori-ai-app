@@ -190,6 +190,7 @@ function buildPrompt(){
 [분류 규칙]
 - 생일잔치·현장학습·행사·수업·모임·상담처럼 '언제 일어나는 일'은 반드시 events에 넣고, date를 위 규칙대로 계산해 반드시 채우세요("내일" 같은 상대 표현도 실제 날짜로). 이런 일을 notes에만 넣지 마세요.
 - notes에는 날짜와 무관한 일반 안내만 넣으세요.
+- tasks(해야 할 일)와 supplies(준비물) 문구에는 날짜/요일을 넣지 마세요. 날짜는 events에만 넣습니다. (예: "9월 12일까지 활동비 납부" ❌ → "활동비 납부" ⭕)
 
 형식:
 {
@@ -287,6 +288,8 @@ function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':
 // 문장 속 날짜/요일/시간을 파랗게 강조 (esc 처리된 문자열에 적용)
 const DATE_RE=/(\d{1,2}\s?월\s?\d{1,2}\s?일(\s?\([월화수목금토일]\))?|[월화수목금토일]요일|(오전|오후)\s?\d{1,2}\s?시(\s?\d{1,2}\s?분)?|\d{1,2}:\d{2}|다음\s?주|이번\s?주|모레|내일|오늘)/g;
 function hlDates(s){ return s.replace(DATE_RE,'<span class="hl">$1</span>'); }
+// 문장에 자체 날짜가 들어있는지(있으면 위쪽 날짜 줄 생략해 중복 방지)
+const HAS_DATE=/\d{1,2}\s?월\s?\d{1,2}\s?일|[월화수목금토일]요일|\d{1,2}:\d{2}|(오전|오후)\s?\d{1,2}\s?시|다음\s?주|이번\s?주|모레|내일|오늘/;
 
 function render(){
   $('childName').textContent=state.childName;
@@ -300,8 +303,8 @@ function render(){
   state.entries.forEach(en=>{
     const d=entryDate(en);
     en.structured.events.forEach(e=>events.push({e,en,dd:dday(e.date)}));
-    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i,date:d}));
-    en.structured.supplies.forEach(v=>supplies.push({v,en,date:d}));
+    en.structured.tasks.forEach((v,i)=>tasks.push({v,en,i,date:HAS_DATE.test(v)?null:d}));
+    en.structured.supplies.forEach(v=>supplies.push({v,en,date:HAS_DATE.test(v)?null:d}));
     en.structured.notes.forEach(v=>notes.push({v,en}));
   });
 
