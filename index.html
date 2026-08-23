@@ -65,6 +65,9 @@
   .hl{color:#2f6fed;font-weight:700}
   /* 공지 카드 */
   .card{flex-direction:row;margin-bottom:16px;padding:14px 16px}
+  .card .ev-head{display:block}
+  .ev-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px}
+  .ev-top .hl{font-size:14px;font-weight:700}
   .card .ev-head .title{font-size:16px}
   .card .sub{margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
   .card .sub-h{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:6px}
@@ -242,7 +245,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v10 · + 버튼';
+const APP_VERSION='v11 · 날짜 위';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -539,10 +542,11 @@ function cardHtml(c, past){
   if(!c.general){
     const meta=[fmtDate(c.date),c.time].filter(Boolean).join(' · ');
     const badge=c.dd?`<span class="badge b-${c.dd.cls}">${c.dd.label}</span>`:'';
-    head=`<div class="ev-head" data-edit><div class="title">${esc(c.title)}</div>${badge}</div>`
-       + (meta?`<div class="meta">${esc(meta)}</div>`:'');
+    head=`<div class="ev-head" data-edit>`
+       + `<div class="ev-top">${meta?`<span class="hl">${esc(meta)}</span>`:'<span></span>'}${badge}</div>`
+       + `<div class="title">${esc(c.title)}</div></div>`;
   }else{
-    head=`<div class="ev-head" data-edit><div class="meta">📌 ${c.date?esc(fmtDate(c.date)):'안내'}</div></div>`;
+    head=`<div class="ev-head" data-edit><div class="ev-top"><span class="hl">📌 ${c.date?esc(fmtDate(c.date)):'안내'}</span></div></div>`;
   }
   let body='';
   if(c.tasks.length){
