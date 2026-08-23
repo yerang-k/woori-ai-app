@@ -57,7 +57,6 @@
   .b-past{background:#f0ece7;color:#a59b8f}
   .item.past{opacity:.5}
   .hl{color:#2f6fed;font-weight:700}
-  .task-date{font-size:13px;color:#2f6fed;font-weight:600;margin-bottom:2px}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -338,7 +337,8 @@ function entryDate(en){
 }
 // 제목 + (있으면)날짜 줄
 function withDate(titleHtml, date){
-  return (date?`<div class="task-date">${fmtDate(date)}</div>`:'')+`<div class="title">${titleHtml}</div>`;
+  const pre=date?`<span class="hl">${fmtDate(date)}</span> `:'';
+  return `<div class="title">${pre}${titleHtml}</div>`;
 }
 function toggleBtn(id,label,n){ return `<button class="group-toggle" data-toggle="${id}" data-label="${label}" data-n="${n}">${label} ${n}개 보기 ▾</button>`; }
 function wrap(id,inner){ return `<div class="past-wrap" data-wrap="${id}">${inner}</div>`; }
@@ -389,10 +389,10 @@ function itemRow(en, inner, cls=''){
 }
 function checkRow(en,i,text,date){
   const done=en.structured.doneTasks&&en.structured.doneTasks[i];
-  const dstr=date?`<div class="task-date">${fmtDate(date)}</div>`:'';
+  const pre=date?`<span class="hl">${fmtDate(date)}</span> `:'';
   return `<div class="item ${done?'done':''}" data-en="${en.id}" data-task="${i}">
     <div class="chk" data-chk>${done?'✓':''}</div>
-    <div class="body">${dstr}<div class="title">${hlDates(esc(text))}</div>
+    <div class="body"><div class="title">${pre}${hlDates(esc(text))}</div>
       <span class="src" data-raw>원문 보기</span>
       <div class="raw">${rawHtml(en)}</div>
     </div>
