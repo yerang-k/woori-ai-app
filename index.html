@@ -26,6 +26,10 @@
   .tab{flex:1;border:1px solid var(--line);background:var(--card);border-radius:22px;padding:10px;
     font-size:14px;font-weight:700;cursor:pointer;color:var(--sub)}
   .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .subtabs{display:flex;gap:6px;margin-bottom:14px}
+  .subtab{flex:1;border:none;background:var(--bg);border-radius:10px;padding:9px;font-size:13px;
+    font-weight:700;cursor:pointer;color:var(--sub)}
+  .subtab.on{background:var(--accent-soft);color:#c05a1e}
   .play-panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
     box-shadow:var(--shadow);margin-bottom:16px}
   .play-panel input,.play-panel select{width:100%;border:1px solid var(--line);border-radius:10px;
@@ -164,10 +168,14 @@
   <div class="tabs">
     <button class="tab on" data-tab="board">📋 공지</button>
     <button class="tab" data-tab="play">🎮 놀이</button>
-    <button class="tab" data-tab="place">📍 나들이</button>
   </div>
   <div id="boardView"><div id="board"></div></div>
   <div id="playView" style="display:none">
+   <div class="subtabs">
+     <button class="subtab on" data-sub="make">🎲 놀이 추천</button>
+     <button class="subtab" data-sub="place">📍 나들이</button>
+   </div>
+   <div id="makeSub">
     <div id="savedPlays"></div>
     <div class="play-panel">
       <div class="mini-h">아이 관심사</div>
@@ -181,8 +189,8 @@
       <div id="playSpin" class="spinner" style="display:none">🤖 놀이를 궁리하는 중…</div>
     </div>
     <div id="playResults"></div>
-  </div>
-  <div id="placeView" style="display:none">
+   </div>
+   <div id="placeSub" style="display:none">
     <div class="play-panel">
       <div class="mini-h">우리 동네 (지역)</div>
       <input type="text" id="regionInput" placeholder="예: 전주시 완산구">
@@ -195,6 +203,7 @@
     </div>
     <div id="savedPlaces"></div>
     <div id="placeResults"></div>
+   </div>
   </div>
 </main>
 
@@ -302,7 +311,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v13 · 놀이저장·나들이';
+const APP_VERSION='v14 · 나들이 하위메뉴';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -942,13 +951,17 @@ function switchTab(tab){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   $('boardView').style.display = tab==='board'?'':'none';
   $('playView').style.display  = tab==='play'?'':'none';
-  $('placeView').style.display = tab==='place'?'':'none';
   $('fab').style.display = tab==='board'?'':'none';
   toggleFab(false);
-  if(tab==='play'){ renderInterests(); renderSavedPlays(); }
-  if(tab==='place'){ $('regionInput').value=state.region; renderSavedPlaces(); }
+  if(tab==='play'){ renderInterests(); renderSavedPlays(); $('regionInput').value=state.region; renderSavedPlaces(); }
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+function switchSub(sub){
+  document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('on', b.dataset.sub===sub));
+  $('makeSub').style.display  = sub==='make'?'':'none';
+  $('placeSub').style.display = sub==='place'?'':'none';
+}
+document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>switchSub(b.dataset.sub));
 function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
 function renderInterests(){
   $('interestChips').innerHTML = state.interests.map((v,i)=>`<span class="chip">${esc(v)} <b data-ri="${i}">✕</b></span>`).join('')
