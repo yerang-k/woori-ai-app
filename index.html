@@ -330,10 +330,11 @@ function render(){
   bindBoard();
   bindToggles(board);
 }
-// 공지의 대표 날짜(가장 이른 일정 날짜) — 할 일·준비물이 물려받음
+const ymd=d=>{const x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;};
+// 공지의 대표 날짜(가장 이른 일정 날짜) — 할 일·준비물이 물려받음. 없으면 등록한 날
 function entryDate(en){
   const ds=(en.structured.events||[]).map(e=>e.date).filter(d=>d&&/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-  return ds[0]||null;
+  return ds[0] || (en.createdAt?ymd(en.createdAt):null);
 }
 // 제목 + (있으면)날짜 줄
 function withDate(titleHtml, date){
