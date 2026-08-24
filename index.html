@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v39 · 2.5모델 복귀·오류표시';
+const APP_VERSION='v40 · 타임아웃·용량표시';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -666,7 +666,7 @@ async function requestGemini(model, parts, noThink, timeoutMs){
   const gc={ responseMimeType:'application/json' };
   if(/2\.5/.test(model) && !noThink) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
   const ctrl=new AbortController();
-  const to=setTimeout(()=>ctrl.abort(), timeoutMs||25000);         // 넘으면 중단(무한 대기 방지)
+  const to=setTimeout(()=>ctrl.abort(), timeoutMs||45000);         // 넘으면 중단(무한 대기 방지)
   try{
     return await fetch(url,{
       method:'POST', headers:{'Content-Type':'application/json'}, signal:ctrl.signal,
@@ -694,14 +694,14 @@ function friendlyErr(status,msg){
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
 async function callGeminiText(parts){
   let lastStatus=0, lastMsg='';
-  const deadline=Date.now()+40000;   // 전체 40초 안에 끝내기(멈춤 방지)
+  const deadline=Date.now()+65000;   // 전체 65초 안에 끝내기(이미지는 오래 걸릴 수 있어 여유)
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
     let noThink=false;
     for(let attempt=0; attempt<2; attempt++){
       if(Date.now()>deadline) throw new Error('AI 응답이 너무 느려요. 인터넷 상태를 확인하고 잠시 후 다시 시도해 주세요.');
       let res;
-      try{ res=await requestGemini(m,parts,noThink, Math.max(4000, Math.min(25000, deadline-Date.now()))); }
+      try{ res=await requestGemini(m,parts,noThink, Math.max(8000, Math.min(45000, deadline-Date.now()))); }
       catch(e){
         if(e.name==='AbortError'){ lastStatus=0; lastMsg='시간 초과';
           if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
@@ -1010,7 +1010,7 @@ $('imgFile').addEventListener('change',async e=>{
   try{
     pendingImage=await loadResized(f);   // {dataUrl, base64, mime} — 원본(보기용, 1568px)
     pendingImage.shareImage=await shrinkToFit(pendingImage.dataUrl);  // 가족 공유용 축소본
-    try{ pendingImage.aiB64=(await resizeDataUrl(pendingImage.dataUrl,1024,0.68)).base64; }  // AI 전송용(작게→빠르게)
+    try{ pendingImage.aiB64=(await resizeDataUrl(pendingImage.dataUrl,900,0.6)).base64; }  // AI 전송용(작게→업로드 빠르게)
     catch(_){ pendingImage.aiB64=pendingImage.base64; }
     $('imgPreview').src=pendingImage.dataUrl; $('imgPreview').style.display='block';
   }catch(err){ toast('이미지를 불러오지 못했어요. 다른 사진으로 시도해 주세요.'); }
@@ -1024,6 +1024,8 @@ async function doAnalyze(){
   if(rawText) parts.push({text:'\n공지 내용:\n'+rawText});
   if(pendingImage) parts.push({inline_data:{mime_type:'image/jpeg', data: pendingImage.aiB64||pendingImage.base64}});  // 작게 줄인 사진 전송
 
+  const kb = pendingImage ? Math.round((pendingImage.aiB64||pendingImage.base64).length*0.75/1024) : 0;
+  $('analyzing').textContent = '🤖 AI가 정리하고 있어요…' + (kb?` (사진 ${kb}KB 전송)`:'');
   $('analyzing').style.display='block'; $('btnAnalyze').disabled=true;
   $('inputHint').style.color=''; $('inputHint').textContent='';
   const t0=Date.now();
