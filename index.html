@@ -363,6 +363,7 @@
     <h3>⚙️ 설정</h3>
     <button class="setrow" id="setChild"><span class="ic">👦</span><span class="tx"><b>아이 정보</b><small id="setChildDesc">이름 · 사진</small></span><span class="ar">›</span></button>
     <button class="setrow" id="setFamily"><span class="ic">👨‍👩‍👧</span><span class="tx"><b>가족 공유</b><small id="setFamilyDesc">엄마·아빠가 함께 보기</small></span><span class="ar">›</span></button>
+    <button class="setrow" id="setNotify"><span class="ic">🔔</span><span class="tx"><b>새 공지 알림</b><small id="setNotifyDesc">가족이 새로 등록하면 알림</small></span><span class="ar" id="notifyState">켜짐</span></button>
     <button class="setrow" id="setKey"><span class="ic">🔑</span><span class="tx"><b>Gemini API 키</b><small id="setKeyDesc">AI 정리에 필요</small></span><span class="ar">›</span></button>
     <button class="btn ghost" id="btnCloseSettings">닫기</button>
     <p class="hint" id="verLine" style="text-align:center;margin-top:10px"></p>
@@ -398,7 +399,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v25 · 원문 사진 재업로드';
+const APP_VERSION='v26 · 새 공지 알림';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -407,7 +408,8 @@ const LS = {
   INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
   GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
-  PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen', TIMER:'wooriai_timer'
+  PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen', TIMER:'wooriai_timer',
+  NOTIFY:'wooriai_notify', SEEN:'wooriai_seen', SEENINIT:'wooriai_seen_init'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -428,6 +430,7 @@ const state = {
   placesDeleted: JSON.parse(localStorage.getItem(LS.PLACESDEL) || '{}'),
   goal: localStorage.getItem(LS.GOAL) || '아무거나',   // 배움 목표(V0.6)
   screen: JSON.parse(localStorage.getItem(LS.SCREEN) || '{}'),   // 영상 시청 기록 {날짜:분}
+  notify: localStorage.getItem(LS.NOTIFY)!=='0',   // 새 공지 알림(기본 켜짐)
 };
 function savePlaces(){ localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
   localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted)); scheduleSync(); }
@@ -502,6 +505,28 @@ function mergeStates(a, b){
   const pm=mergeById(a.places,a.placesDeleted,b.places,b.placesDeleted);
   return {entries, deleted:em.deleted, places:pm.items, placesDeleted:pm.deleted};
 }
+// 공지 한 줄 요약(알림용)
+function entrySummary(en){ const s=en.structured||{};
+  if(s.events&&s.events[0]&&s.events[0].title) return s.events[0].title;
+  if(s.tasks&&s.tasks[0]) return s.tasks[0];
+  if(s.supplies&&s.supplies[0]) return '준비물: '+s.supplies[0];
+  if(s.notes&&s.notes[0]) return s.notes[0];
+  return '새 공지'; }
+function fireNotify(head, body){
+  toast(`🔔 ${head}: ${body}`);
+  try{ if(window.Notification && Notification.permission==='granted') new Notification('우리 아이 앱 🔔', {body:`${head}: ${body}`}); }catch(e){}
+  try{ navigator.vibrate && navigator.vibrate(250); }catch(e){}
+}
+// 동기화로 새로 들어온(상대가 등록한) 공지 알림
+function notifyNewEntries(){
+  const seen=new Set(JSON.parse(localStorage.getItem(LS.SEEN)||'[]'));
+  const fresh=state.entries.filter(en=>!seen.has(en.id));
+  localStorage.setItem(LS.SEEN, JSON.stringify(state.entries.map(e=>e.id)));   // 본 목록 갱신
+  if(!localStorage.getItem(LS.SEENINIT)){ localStorage.setItem(LS.SEENINIT,'1'); return; }  // 첫 실행은 알림 안 함
+  if(!state.notify) return;
+  fresh.filter(en=>en.createdBy && en.createdBy!==(state.me||'나'))
+       .forEach(en=>fireNotify(`${en.createdBy}님이 등록`, entrySummary(en)));
+}
 async function syncNow(manual){
   if(!syncConfigured() || syncing) return;
   syncing=true; setSyncStatus('동기화 중…');
@@ -527,6 +552,7 @@ async function syncNow(manual){
     localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
     localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted));
     ensureShareImages();   // 수신한 사진 공지에도 공유용 축소본 채움(재공유 대비)
+    notifyNewEntries();    // 가족이 새로 등록한 공지 알림
     if(typeof renderSavedPlaces==='function') renderSavedPlaces();
     // 이름·사진: 상대가 더 최근에 바꿨으면 반영
     const rmeta=data.state&&data.state.meta;
@@ -1023,8 +1049,15 @@ $('btnCancelEdit').onclick=()=>closeModal('editModal');
 $('btnSettings').onclick=()=>{
   $('setFamilyDesc').textContent = syncConfigured()?('연결됨'+(state.me?' · '+state.me:'')):'엄마·아빠가 함께 보기';
   $('setKeyDesc').textContent = state.apiKey?'연결됨':'AI 정리에 필요';
+  $('notifyState').textContent = state.notify?'켜짐':'꺼짐';
   $('verLine').textContent = APP_VERSION;
   openModal('settingsModal');
+};
+$('setNotify').onclick=()=>{
+  state.notify=!state.notify; localStorage.setItem(LS.NOTIFY, state.notify?'1':'0');
+  $('notifyState').textContent = state.notify?'켜짐':'꺼짐';
+  if(state.notify && window.Notification && Notification.permission==='default'){ try{ Notification.requestPermission(); }catch(e){} }
+  toast(state.notify?'새 공지 알림을 켰어요':'새 공지 알림을 껐어요');
 };
 $('btnCloseSettings').onclick=()=>closeModal('settingsModal');
 $('setKey').onclick=()=>{ closeModal('settingsModal'); openKeyModal(); };
