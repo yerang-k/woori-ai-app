@@ -200,6 +200,14 @@
    </div>
    <div id="placeSub" style="display:none">
     <div class="play-panel">
+      <div class="mini-h">🔎 지도에서 바로 찾기</div>
+      <div class="row" style="gap:8px;align-items:stretch">
+        <input type="text" id="mapSearchInput" placeholder="예: 키즈카페, 놀이터, 수목원" style="flex:1">
+        <button class="btn primary" id="btnMapSearch" style="margin:0;width:auto;flex:0 0 auto;padding:0 18px">검색</button>
+      </div>
+      <p class="hint" style="margin-top:6px">우리 동네 주변으로 네이버 지도에서 검색해요.</p>
+    </div>
+    <div class="play-panel">
       <div class="mini-h">우리 동네 (지역)</div>
       <input type="text" id="regionInput" placeholder="예: 전주시 완산구">
       <div class="row" style="margin-top:8px;gap:8px">
@@ -325,7 +333,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v16 · 탭유지·장소등록';
+const APP_VERSION='v17 · 지도검색';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1121,6 +1129,13 @@ function renderSavedPlaces(){
   box.innerHTML=`<div class="saved-h">⭐ 저장한 곳 ${state.savedPlaces.length}</div>`+state.savedPlaces.map(placeCardHtml).join('');
   bindPlaceCards(box);
 }
+function doMapSearch(){
+  const q=$('mapSearchInput').value.trim();
+  if(!q){ toast('찾을 장소를 입력해 주세요 (예: 키즈카페)'); return; }
+  window.open(mapUrl(q), '_blank', 'noopener');   // 지역 + 검색어로 네이버 지도 열기
+}
+$('btnMapSearch').onclick=doMapSearch;
+$('mapSearchInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); doMapSearch(); } });
 $('btnAddPlace').onclick=()=>{
   const name=$('manualPlaceName').value.trim();
   if(!name){ toast('장소 이름을 입력해 주세요.'); return; }
