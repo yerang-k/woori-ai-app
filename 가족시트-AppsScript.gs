@@ -17,9 +17,11 @@
  *   "새 배포"를 또 만들면 URL이 바뀌어 기존 연결이 끊깁니다.
  */
 
-var SHEET_NAME = 'data';    // 항목 저장 시트
-var DEL_NAME   = 'deleted'; // 삭제표시 저장 시트
+var SHEET_NAME = 'data';    // 공지 항목 저장 시트
+var DEL_NAME   = 'deleted'; // 공지 삭제표시 시트
 var META_NAME  = 'meta';    // 아이 이름·사진 저장 시트
+var PLC_NAME   = 'places';  // 나들이 저장 장소 시트
+var PLCDEL_NAME= 'places_deleted'; // 장소 삭제표시 시트
 
 function KEY_() {
   return PropertiesService.getScriptProperties().getProperty('FAMILY_KEY') || '';
@@ -54,7 +56,16 @@ function read_() {
   var ms = sheet_(META_NAME, ['json']);
   var mv = ms.getDataRange().getValues();
   if (mv.length > 1 && mv[1][0]) { try { meta = JSON.parse(mv[1][0]); } catch (e) {} }
-  return { entries: entries, deleted: deleted, meta: meta };
+  // 나들이 저장 장소
+  var places = [];
+  var ps = sheet_(PLC_NAME, ['id', 'updatedAt', 'json']);
+  var pv = ps.getDataRange().getValues();
+  for (var p = 1; p < pv.length; p++) { if (pv[p][0]) { try { places.push(JSON.parse(pv[p][2])); } catch (e) {} } }
+  var placesDeleted = {};
+  var pd = sheet_(PLCDEL_NAME, ['id', 'deletedAt']);
+  var pdv = pd.getDataRange().getValues();
+  for (var q = 1; q < pdv.length; q++) { if (pdv[q][0]) placesDeleted[pdv[q][0]] = Number(pdv[q][1]) || 0; }
+  return { entries: entries, deleted: deleted, meta: meta, places: places, placesDeleted: placesDeleted };
 }
 
 // 저장소 통째로 다시 쓰기
@@ -72,26 +83,41 @@ function write_(state) {
   var ms = sheet_(META_NAME, ['json']);
   ms.clearContents(); ms.appendRow(['json']);
   ms.getRange(2, 1).setValue(JSON.stringify(state.meta || { childName: '', photo: '', at: 0 }));
+  // 나들이 저장 장소
+  var ps = sheet_(PLC_NAME, ['id', 'updatedAt', 'json']);
+  ps.clearContents(); ps.appendRow(['id', 'updatedAt', 'json']);
+  var prows = (state.places || []).map(function (e) { return [e.id, e.updatedAt || 0, JSON.stringify(e)]; });
+  if (prows.length) ps.getRange(2, 1, prows.length, 3).setValues(prows);
+  var pd = sheet_(PLCDEL_NAME, ['id', 'deletedAt']);
+  pd.clearContents(); pd.appendRow(['id', 'deletedAt']);
+  var pdd = state.placesDeleted || {};
+  var pdrows = Object.keys(pdd).map(function (id) { return [id, pdd[id]]; });
+  if (pdrows.length) pd.getRange(2, 1, pdrows.length, 2).setValues(pdrows);
 }
 
-// 클라이언트와 동일한 병합 규칙 (id별 최신 우선 + 삭제표시). 서버에서도 합쳐 충돌 최소화.
-function merge_(a, b) {
+// id별 병합(최신 우선 + 삭제표시). 클라이언트와 동일 규칙.
+function mergeById_(aItems, aDel, bItems, bDel) {
   var deleted = {}, id;
-  for (id in a.deleted) deleted[id] = a.deleted[id];
-  for (id in b.deleted) deleted[id] = Math.max(deleted[id] || 0, b.deleted[id]);
+  for (id in (aDel || {})) deleted[id] = aDel[id];
+  for (id in (bDel || {})) deleted[id] = Math.max(deleted[id] || 0, bDel[id]);
   var byId = {};
-  [].concat(a.entries, b.entries).forEach(function (e) {
+  [].concat(aItems || [], bItems || []).forEach(function (e) {
     var cur = byId[e.id];
     if (!cur || (e.updatedAt || 0) > (cur.updatedAt || 0)) byId[e.id] = e;
   });
-  var entries = [];
+  var items = [];
   Object.keys(byId).forEach(function (k) {
     var e = byId[k];
-    if (!(deleted[e.id] && deleted[e.id] >= (e.updatedAt || 0))) entries.push(e);
+    if (!(deleted[e.id] && deleted[e.id] >= (e.updatedAt || 0))) items.push(e);
   });
+  return { items: items, deleted: deleted };
+}
+function merge_(a, b) {
+  var em = mergeById_(a.entries, a.deleted, b.entries, b.deleted);
+  var pm = mergeById_(a.places, a.placesDeleted, b.places, b.placesDeleted);
   var am = a.meta || { at: 0 }, bm = b.meta || { at: 0 };
   var meta = (bm.at || 0) > (am.at || 0) ? bm : am;   // 이름·사진: 최근 변경 우선
-  return { entries: entries, deleted: deleted, meta: meta };
+  return { entries: em.items, deleted: em.deleted, meta: meta, places: pm.items, placesDeleted: pm.deleted };
 }
 
 function doGet(e) {
@@ -107,7 +133,7 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch (err) { return json_({ ok: false, error: 'busy' }); }
   try {
-    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 } };
+    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {} };
     var merged = merge_(read_(), incoming);
     write_(merged);
     return json_({ ok: true, state: merged });

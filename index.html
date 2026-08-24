@@ -323,7 +323,7 @@
 <div class="modal-bg" id="familyModal">
   <div class="modal">
     <h3>👨‍👩‍👧 가족 공유</h3>
-    <p class="hint">엄마·아빠가 같은 아이 정보를 함께 봐요. 아이 사진(원본)은 공유되지 않고, 정리된 일정·할 일·준비물·알림만 공유됩니다.</p>
+    <p class="hint">엄마·아빠가 같은 아이 정보를 함께 봐요. 정리된 일정·할 일·준비물·알림, 저장한 나들이 장소가 공유됩니다. (공지 사진 원본은 넣은 기기에만 남아요)</p>
 
     <label>나는 누구인가요? (등록자 표시용)</label>
     <div class="row" id="meRow">
@@ -348,7 +348,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v18 · 나들이 모드';
+const APP_VERSION='v19 · 장소 가족공유';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -356,7 +356,8 @@ const LS = {
   PHOTO:'wooriai_photo', METAAT:'wooriai_metaat',
   INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
-  GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode'
+  GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
+  PLACESDEL:'wooriai_places_deleted'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -373,9 +374,12 @@ const state = {
   reactions: JSON.parse(localStorage.getItem(LS.REACTIONS) || '[]'),  // 놀이 반응(개인화 대비)
   saved: JSON.parse(localStorage.getItem(LS.SAVED) || '[]'),          // 저장한 놀이
   region: localStorage.getItem(LS.REGION) || '',                      // 나들이 지역
-  savedPlaces: JSON.parse(localStorage.getItem(LS.SAVEDPLACES) || '[]'),
+  savedPlaces: JSON.parse(localStorage.getItem(LS.SAVEDPLACES) || '[]'),   // 저장한 나들이 장소(가족 공유)
+  placesDeleted: JSON.parse(localStorage.getItem(LS.PLACESDEL) || '{}'),
   goal: localStorage.getItem(LS.GOAL) || '아무거나',   // 배움 목표(V0.6)
 };
+function savePlaces(){ localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+  localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted)); scheduleSync(); }
 // 저장 + (가족 연결돼 있으면) 동기화 예약
 function saveEntries(){
   localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
@@ -401,25 +405,29 @@ function setSyncStatus(t){ const el=document.getElementById('syncStatus'); if(el
 function stripForSync(entries){
   return entries.map(en=>({...en, source:{...en.source, image: en.source.image?'__local__':null}}));
 }
-// 두 상태 병합: id별 updatedAt 최신 우선 + 삭제표시 반영 + 이 기기의 원본 사진 보존
+// id별 병합: updatedAt 최신 우선 + 삭제표시 반영
+function mergeById(aItems, aDel, bItems, bDel){
+  const deleted={...(aDel||{})};
+  for(const id in (bDel||{})) deleted[id]=Math.max(deleted[id]||0, bDel[id]);
+  const byId={};
+  [...(aItems||[]), ...(bItems||[])].forEach(e=>{ const c=byId[e.id]; if(!c||(e.updatedAt||0)>(c.updatedAt||0)) byId[e.id]=e; });
+  const items=Object.values(byId).filter(e=>!(deleted[e.id] && deleted[e.id] >= (e.updatedAt||0)));
+  return {items, deleted};
+}
+// 전체 상태 병합: 공지(사진 보존) + 저장 장소
 function mergeStates(a, b){
-  const deleted={...(a.deleted||{})};
-  for(const id in (b.deleted||{})) deleted[id]=Math.max(deleted[id]||0, b.deleted[id]);
-  const byId={}, localImg={};
-  [...(a.entries||[]), ...(b.entries||[])].forEach(e=>{
-    if(e.source && e.source.image && e.source.image!=='__local__') localImg[e.id]=e.source.image;
-    const cur=byId[e.id];
-    if(!cur || (e.updatedAt||0) > (cur.updatedAt||0)) byId[e.id]=e;
-  });
-  let entries=Object.values(byId).filter(e=>!(deleted[e.id] && deleted[e.id] >= (e.updatedAt||0)));
-  entries=entries.map(e=>{
+  const localImg={};
+  [...(a.entries||[]),...(b.entries||[])].forEach(e=>{ if(e.source && e.source.image && e.source.image!=='__local__') localImg[e.id]=e.source.image; });
+  const em=mergeById(a.entries,a.deleted,b.entries,b.deleted);
+  let entries=em.items.map(e=>{
     const img=(e.source&&e.source.image);
     if(localImg[e.id] && (!img || img==='__local__')) return {...e, source:{...e.source, image:localImg[e.id]}};
     if(img==='__local__') return {...e, source:{...e.source, image:null}};
     return e;
   });
   entries.sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
-  return {entries, deleted};
+  const pm=mergeById(a.places,a.placesDeleted,b.places,b.placesDeleted);
+  return {entries, deleted:em.deleted, places:pm.items, placesDeleted:pm.deleted};
 }
 async function syncNow(manual){
   if(!syncConfigured() || syncing) return;
@@ -427,6 +435,7 @@ async function syncNow(manual){
   try{
     const payload={ key:state.syncKey, state:{
       entries:stripForSync(state.entries), deleted:state.deleted,
+      places:state.savedPlaces, placesDeleted:state.placesDeleted,       // 나들이 장소 공유
       meta:{ childName:state.childName, photo:state.photo, at:state.metaAt }   // 이름·사진 공유
     } };
     const res=await fetch(state.syncUrl, {
@@ -435,10 +444,16 @@ async function syncNow(manual){
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error==='key'?'가족 키가 일치하지 않아요.':'동기화 실패: '+(data.error||''));
-    const merged=mergeStates({entries:state.entries, deleted:state.deleted}, data.state||{entries:[],deleted:{}});
+    const merged=mergeStates(
+      {entries:state.entries, deleted:state.deleted, places:state.savedPlaces, placesDeleted:state.placesDeleted},
+      data.state||{});
     state.entries=merged.entries; state.deleted=merged.deleted;
+    state.savedPlaces=merged.places; state.placesDeleted=merged.placesDeleted;
     localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
     localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
+    localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+    localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted));
+    if(typeof renderSavedPlaces==='function') renderSavedPlaces();
     // 이름·사진: 상대가 더 최근에 바꿨으면 반영
     const rmeta=data.state&&data.state.meta;
     if(rmeta && (rmeta.at||0) > (state.metaAt||0)){
@@ -1140,11 +1155,12 @@ function bindPlaceCards(container){
     card.querySelector('[data-savebtn]')?.addEventListener('click',()=>toggleSavePlace(JSON.parse(card.dataset.place)));
   });
 }
+const newPlaceId=()=>'p'+Date.now()+Math.random().toString(36).slice(2,6);
 function toggleSavePlace(pl){
   const key=pl.name||''; const i=state.savedPlaces.findIndex(s=>(s.name||'')===key);
-  if(i>=0){ state.savedPlaces.splice(i,1); toast('저장 해제했어요'); } else { state.savedPlaces.push(pl); toast('장소를 저장했어요 ⭐'); }
-  localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
-  renderSavedPlaces();
+  if(i>=0){ const rm=state.savedPlaces.splice(i,1)[0]; if(rm.id) state.placesDeleted[rm.id]=Date.now(); toast('저장 해제했어요'); }
+  else { state.savedPlaces.push({id:newPlaceId(), name:key, type:pl.type||'', why:pl.why||'', updatedAt:Date.now()}); toast('장소를 저장했어요 ⭐'); }
+  savePlaces(); renderSavedPlaces();
   document.querySelectorAll('#placeResults .place-card').forEach(c=>{ const b=c.querySelector('[data-savebtn]'); if(b) b.textContent=isSavedPlace(c.dataset.name)?'★':'☆'; });
 }
 function renderPlaces(places){ $('placeResults').innerHTML=places.map(placeCardHtml).join(''); bindPlaceCards($('placeResults')); }
@@ -1165,8 +1181,8 @@ $('btnAddPlace').onclick=()=>{
   const name=$('manualPlaceName').value.trim();
   if(!name){ toast('장소 이름을 입력해 주세요.'); return; }
   if(state.savedPlaces.some(s=>(s.name||'')===name)){ toast('이미 저장된 곳이에요.'); return; }
-  state.savedPlaces.push({name, type:'직접 등록', why:$('manualPlaceMemo').value.trim()});
-  localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+  state.savedPlaces.push({id:newPlaceId(), name, type:'직접 등록', why:$('manualPlaceMemo').value.trim(), updatedAt:Date.now()});
+  savePlaces();
   $('manualPlaceName').value=''; $('manualPlaceMemo').value='';
   renderSavedPlaces(); toast('저장 목록에 추가했어요 ⭐');
 };
@@ -1187,6 +1203,10 @@ function selftest(){
 
 // 구버전 데이터 이관: doneTasks(배열) → done(객체, 공용 키 g{i})
 state.entries.forEach(en=>{ const s=en.structured; if(s && !s.done){ s.done={}; (s.doneTasks||[]).forEach((v,i)=>{ if(v) s.done['g'+i]=true; }); } });
+// 저장 장소에 id·updatedAt 부여(가족 공유 병합용)
+let _pmig=false;
+state.savedPlaces.forEach(p=>{ if(!p.id){ p.id=newPlaceId(); p.updatedAt=p.updatedAt||Date.now(); _pmig=true; } });
+if(_pmig) localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
 
 render();
 // 마지막으로 보던 탭 복원(앱 전환/새로고침 후에도 유지)
