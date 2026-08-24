@@ -49,6 +49,17 @@
   .steps{margin:0;padding-left:20px}
   .steps li{margin:3px 0}
   .learn{background:var(--accent-soft);border-radius:10px;padding:9px 11px;font-size:14px}
+  /* 영상 시청 기록 */
+  #todayTotal{font-size:36px;font-weight:800;color:var(--accent)}
+  #todayTotal.over{color:#d1451b}
+  .quickbtns{display:flex;gap:6px;flex-wrap:wrap}
+  .quickbtns .btn{flex:1;min-width:64px;margin:0;width:auto;padding:12px 4px;font-size:15px}
+  .daybar{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+  .daybar .lbl{width:60px;color:var(--sub);flex:0 0 auto}
+  .daybar .track{flex:1;background:var(--bg);border-radius:6px;height:18px;overflow:hidden}
+  .daybar .fill{height:100%;background:var(--accent);border-radius:6px;min-width:2px}
+  .daybar .fill.over{background:#e8875a}
+  .daybar .val{width:52px;text-align:right;flex:0 0 auto;font-weight:600}
   .bookmark{background:none;border:none;font-size:22px;cursor:pointer;color:#e0a92e;padding:2px 4px;align-self:flex-start}
   .saved-h{font-size:14px;font-weight:800;color:var(--sub);margin:2px 0 10px}
   .maplink{display:inline-block;margin-top:8px;color:var(--accent);font-weight:700;font-size:14px;text-decoration:none}
@@ -172,8 +183,28 @@
   <div class="tabs">
     <button class="tab on" data-tab="board">📋 공지</button>
     <button class="tab" data-tab="play">🎮 놀이</button>
+    <button class="tab" data-tab="screen">📺 영상</button>
   </div>
   <div id="boardView"><div id="board"></div></div>
+  <div id="screenView" style="display:none">
+    <div class="play-panel" style="text-align:center">
+      <div class="mini-h" style="text-align:left">오늘 본 영상</div>
+      <div id="todayTotal">0분</div>
+      <div class="quickbtns" style="margin-top:12px">
+        <button class="btn ghost addmin" data-min="10">+10분</button>
+        <button class="btn ghost addmin" data-min="20">+20분</button>
+        <button class="btn ghost addmin" data-min="30">+30분</button>
+        <button class="btn ghost addmin" data-min="60">+1시간</button>
+      </div>
+      <button class="btn ghost" id="undoScreen" style="margin-top:8px">방금 추가 취소</button>
+      <p class="hint" id="screenGuide"></p>
+    </div>
+    <div class="play-panel">
+      <div class="mini-h">최근 7일</div>
+      <div id="screenWeek"></div>
+      <div id="screenAvg" class="hint" style="margin-top:8px"></div>
+    </div>
+  </div>
   <div id="playView" style="display:none">
    <div class="subtabs">
      <button class="subtab on" data-sub="make">🎲 놀이 추천</button>
@@ -348,7 +379,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v20 · 오류 표시';
+const APP_VERSION='v21 · 영상시간 기록';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -357,7 +388,7 @@ const LS = {
   INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
   GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
-  PLACESDEL:'wooriai_places_deleted'
+  PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -377,6 +408,7 @@ const state = {
   savedPlaces: JSON.parse(localStorage.getItem(LS.SAVEDPLACES) || '[]'),   // 저장한 나들이 장소(가족 공유)
   placesDeleted: JSON.parse(localStorage.getItem(LS.PLACESDEL) || '{}'),
   goal: localStorage.getItem(LS.GOAL) || '아무거나',   // 배움 목표(V0.6)
+  screen: JSON.parse(localStorage.getItem(LS.SCREEN) || '{}'),   // 영상 시청 기록 {날짜:분}
 };
 function savePlaces(){ localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
   localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted)); scheduleSync(); }
@@ -1008,10 +1040,12 @@ function switchTab(tab){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   $('boardView').style.display = tab==='board'?'':'none';
   $('playView').style.display  = tab==='play'?'':'none';
+  $('screenView').style.display= tab==='screen'?'':'none';
   $('fab').style.display = tab==='board'?'':'none';
   toggleFab(false);
   localStorage.setItem(LS.TAB, tab);   // 마지막 탭 기억(앱 전환 후 복원)
   if(tab==='play'){ renderInterests(); renderSavedPlays(); $('playGoal').value=state.goal; $('regionInput').value=state.region; renderSavedPlaces(); }
+  if(tab==='screen') renderScreen();
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 function switchSub(sub){
@@ -1190,6 +1224,46 @@ $('btnAddPlace').onclick=()=>{
   renderSavedPlaces(); toast('저장 목록에 추가했어요 ⭐');
 };
 
+/* ================= 영상 시청 기록 ================= */
+const GUIDE_MIN=60;   // 만 4~5세 하루 권장(WHO) 참고선
+function fmtMin(m){ if(!m) return '0분'; const h=Math.floor(m/60), mm=m%60; return h?`${h}시간${mm?' '+mm+'분':''}`:`${mm}분`; }
+let lastScreenAdd=null;
+function saveScreen(){ localStorage.setItem(LS.SCREEN, JSON.stringify(state.screen)); }
+function addScreen(min){
+  const k=ymd(new Date());
+  state.screen[k]=(state.screen[k]||0)+min;
+  lastScreenAdd={date:k, min};
+  saveScreen(); renderScreen(); toast(fmtMin(min)+' 기록했어요');
+}
+function renderScreen(){
+  const today=ymd(new Date());
+  const t=state.screen[today]||0;
+  const el=$('todayTotal'); el.textContent=fmtMin(t); el.classList.toggle('over', t>GUIDE_MIN);
+  $('screenGuide').innerHTML = t>GUIDE_MIN
+    ? `오늘 권장 시간(1시간)을 <b>${fmtMin(t-GUIDE_MIN)}</b> 넘었어요. (만 4~5세 하루 1시간 이내 권장·WHO)`
+    : `만 4~5세는 하루 1시간 이내 권장(WHO). 남은 권장: ${fmtMin(GUIDE_MIN-t)}`;
+  // 최근 7일
+  const days=[];
+  for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); days.push(ymd(d)); }
+  const vals=days.map(k=>state.screen[k]||0);
+  const max=Math.max(GUIDE_MIN, ...vals);
+  const wd=['일','월','화','수','목','금','토'];
+  $('screenWeek').innerHTML=days.map((k,i)=>{
+    const m=vals[i]; const d=new Date(k+'T00:00:00');
+    const lbl=i===6?'오늘':(i===5?'어제':`${d.getMonth()+1}/${d.getDate()}(${wd[d.getDay()]})`);
+    return `<div class="daybar"><span class="lbl">${lbl}</span><span class="track"><span class="fill ${m>GUIDE_MIN?'over':''}" style="width:${Math.round(m/max*100)}%"></span></span><span class="val">${fmtMin(m)}</span></div>`;
+  }).join('');
+  const sum=vals.reduce((a,b)=>a+b,0);
+  $('screenAvg').textContent=`최근 7일 합계 ${fmtMin(sum)} · 하루 평균 ${fmtMin(Math.round(sum/7))}`;
+}
+document.querySelectorAll('.addmin').forEach(b=>b.onclick=()=>addScreen(+b.dataset.min));
+$('undoScreen').onclick=()=>{
+  if(!lastScreenAdd){ toast('취소할 기록이 없어요.'); return; }
+  const {date,min}=lastScreenAdd;
+  state.screen[date]=Math.max(0,(state.screen[date]||0)-min);
+  lastScreenAdd=null; saveScreen(); renderScreen(); toast('방금 추가를 취소했어요');
+};
+
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
   const r=normalizeStructured('```json\n{"title":"현장학습","date":"2026-09-12","time":"08:30","tasks":["물통 준비","모자 준비"],"notes":["08:30까지 등원"]}\n```');
@@ -1215,6 +1289,7 @@ render();
 // 마지막으로 보던 탭 복원(앱 전환/새로고침 후에도 유지)
 const _tab=localStorage.getItem(LS.TAB)||'board';
 if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); if(_sub) switchSub(_sub); }
+else if(_tab==='screen'){ switchTab('screen'); }
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
 if(syncConfigured()) syncNow(false);   // 열 때 가족 변경분 가져오기
 if(location.search.includes('selftest')) selftest();
