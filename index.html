@@ -19,6 +19,10 @@
     --shadow:0 2px 8px rgba(120,90,60,.07);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  /* 탭이 '글자 선택→구글 검색'으로 잘못 인식되는 것 방지(입력칸만 선택 허용) */
+  body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  input,textarea{-webkit-user-select:text;user-select:text}
+  img{-webkit-touch-callout:none}
   body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
     line-height:1.5;padding-bottom:96px}
@@ -141,8 +145,10 @@
     justify-content:center;z-index:20}
   .modal-bg.open{display:flex}
   .modal{background:var(--card);width:100%;max-width:640px;border-radius:18px 18px 0 0;
-    padding:18px 16px 24px;max-height:90vh;overflow:auto}
+    padding:18px 16px 24px;max-height:90vh;overflow:auto;position:relative}
   .modal h3{margin:2px 0 14px;font-size:17px}
+  .modal-x{position:absolute;top:12px;right:14px;background:var(--bg);border:none;border-radius:50%;
+    width:34px;height:34px;font-size:17px;color:var(--sub);cursor:pointer;z-index:2}
   .modal textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;
     padding:12px;font-size:15px;font-family:inherit;resize:vertical}
   .modal input[type=text],.modal input[type=date],.modal input[type=time],.modal input[type=password]{
@@ -164,7 +170,7 @@
   .btn.ghost{background:var(--bg);color:var(--text)}
   .btn.ghost.me-opt.on{background:var(--accent);color:#fff}
   .btn:disabled{opacity:.5}
-  .preview-img{max-width:100%;border-radius:10px;margin-top:10px;display:none}
+  .preview-img{max-width:100%;max-height:34vh;object-fit:contain;border-radius:10px;margin-top:10px;display:none}
   .hint{font-size:13px;color:var(--sub);margin:6px 0 0}
   .er{display:flex;gap:6px;margin-bottom:6px;align-items:center}
   .er input{margin-bottom:0}
@@ -314,6 +320,7 @@
 <!-- 입력 모달 -->
 <div class="modal-bg" id="inputModal">
   <div class="modal">
+    <button class="modal-x" id="btnCloseInput" title="닫기">✕</button>
     <h3 id="inputTitle">어린이집 공지 추가</h3>
     <input type="file" id="imgFile" accept="image/*" style="display:none">
     <img class="preview-img" id="imgPreview">
@@ -417,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v37 · 오류코드 표시';
+const APP_VERSION='v38 · 글자선택·닫기 개선';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1125,6 +1132,7 @@ $('fabImage').onclick=()=>{ toggleFab(false); openInput('image'); };
 $('fabText').onclick=()=>{ toggleFab(false); openInput('text'); };
 $('btnAnalyze').onclick=doAnalyze;
 $('btnCancelInput').onclick=()=>closeModal('inputModal');
+$('btnCloseInput').onclick=()=>closeModal('inputModal');
 $('btnSaveEdit').onclick=saveEdit;
 $('btnCancelEdit').onclick=()=>closeModal('editModal');
 // 설정 허브
