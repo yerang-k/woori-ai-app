@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v45 · 느린응답 여유';
+const APP_VERSION='v46 · 일정 개별삭제';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -829,10 +829,10 @@ function entryCards(en){
     if(evs.length===1 && !tasks.length && !sup.length && (gTasks.length||gSup.length)){
       tasks=gTasks.map((t,ti)=>({text:t,key:'g'+ti})); sup=gSup.slice(); generalUsed=true;
     }
-    cards.push({en,date:e.date,dd:dday(e.date),title:e.title,time:e.time,tasks,supplies:sup,general:false});
+    cards.push({en,ev:ei,date:e.date,dd:dday(e.date),title:e.title,time:e.time,tasks,supplies:sup,general:false});
   });
   if(!generalUsed && (evs.length===0 || gTasks.length || gSup.length)){
-    cards.push({en,date:entryDate(en),dd:null,title:null,time:null,general:true,
+    cards.push({en,ev:'g',date:entryDate(en),dd:null,title:null,time:null,general:true,
       tasks:gTasks.map((t,ti)=>({text:t,key:'g'+ti})), supplies:gSup.slice()});
   }
   return cards;
@@ -862,7 +862,7 @@ function cardHtml(c, past){
   const by=en.createdBy&&en.createdBy!=='나'?`<span class="by">${esc(en.createdBy)} 등록</span>`:'';
   // 날짜 없는(📌) 공지엔 완료 버튼 — 누르면 '지난 공지'로 접힘(되돌리기 가능)
   const doneBtn = c.general ? (en.archived?`<button class="foot-btn" data-unarchive>되돌리기</button>`:`<button class="foot-btn" data-archive>완료</button>`) : '';
-  return `<div class="item card ${past?'past':''}" data-en="${en.id}">
+  return `<div class="item card ${past?'past':''}" data-en="${en.id}" data-ev="${c.ev}">
     <div class="body">${head}${body}
       <div class="card-foot"><span class="src" data-raw>원문 보기</span>${by}</div>
       <div class="raw">${rawHtml(en)}</div>
@@ -922,9 +922,17 @@ function bindBoard(){
       el.querySelector('.raw').classList.toggle('open');
     });
     el.querySelector('[data-del]')?.addEventListener('click',()=>{
-      if(confirm('이 공지를 삭제할까요? (원문·정리 내용 모두 삭제됩니다)')){
-        removeEntry(en.id); saveEntries(); render();
+      const ev=el.dataset.ev, s=en.structured;
+      if(ev!=='g' && (s.events||[]).length>1){          // 일정이 여러 개면 그 일정 하나만 삭제
+        if(!confirm('이 일정만 삭제할까요?')) return;
+        s.events.splice(+ev,1); touch(en); saveEntries(); render(); return;
       }
+      if(ev==='g' && (s.events||[]).length>0){          // 일정 있는 공지의 '기타' 카드 → 그 항목만 비움
+        if(!confirm('이 항목을 삭제할까요?')) return;
+        s.tasks=[]; s.supplies=[]; touch(en); saveEntries(); render(); return;
+      }
+      if(!confirm('이 공지를 삭제할까요? (원문·정리 내용 모두 삭제됩니다)')) return;
+      removeEntry(en.id); saveEntries(); render();
     });
     // 카드 안 여러 할 일 체크박스 (일정별 key)
     el.querySelectorAll('[data-chk]').forEach(chk=>chk.addEventListener('click',()=>{
