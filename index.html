@@ -123,7 +123,7 @@
   .note-l{font-size:14px;margin:4px 0;line-height:1.45}
   .card-foot{margin-top:12px;display:flex;align-items:center;gap:10px}
   .card-foot .by{font-size:12px;color:var(--sub);margin-left:auto}
-  .foot-btn{background:var(--accent-soft);border:none;border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;color:#c05a1e;cursor:pointer}
+  .foot-btn{background:var(--accent-soft);border:none;border-radius:14px;padding:5px 12px;font-size:13px;font-weight:700;color:#c05a1e;cursor:pointer;flex:0 0 auto;align-self:flex-start;white-space:nowrap}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -400,7 +400,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v28 · 완료 버튼';
+const APP_VERSION='v29 · 완료 버튼 위치';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -826,9 +826,10 @@ function cardHtml(c, past){
   const doneBtn = c.general ? (en.archived?`<button class="foot-btn" data-unarchive>되돌리기</button>`:`<button class="foot-btn" data-archive>완료</button>`) : '';
   return `<div class="item card ${past?'past':''}" data-en="${en.id}">
     <div class="body">${head}${body}
-      <div class="card-foot"><span class="src" data-raw>원문 보기</span>${doneBtn}${by}</div>
+      <div class="card-foot"><span class="src" data-raw>원문 보기</span>${by}</div>
       <div class="raw">${rawHtml(en)}</div>
     </div>
+    ${doneBtn}
     <button class="del" data-del title="삭제">✕</button>
   </div>`;
 }
