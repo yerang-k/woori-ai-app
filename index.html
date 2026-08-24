@@ -417,7 +417,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v35 · 오류처리 개선';
+const APP_VERSION='v36 · 멈춤방지·빠른모델';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -433,7 +433,7 @@ const LS = {
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
   childName: localStorage.getItem(LS.NAME) || '우리 아이',
-  model: localStorage.getItem(LS.MODEL) || 'gemini-2.5-flash',
+  model: localStorage.getItem(LS.MODEL) || 'gemini-2.0-flash',
   entries: JSON.parse(localStorage.getItem(LS.ENTRIES) || '[]'),
   deleted: JSON.parse(localStorage.getItem(LS.DELETED) || '{}'),  // 삭제 표시 {id:시각} — 가족 동기화 병합용
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
@@ -617,7 +617,9 @@ async function syncNow(manual){
 
 /* ================= Gemini 호출 ================= */
 const API_BASE='https://generativelanguage.googleapis.com/v1beta';
-const MODEL_FALLBACK=['gemini-2.5-flash','gemini-flash-latest','gemini-2.0-flash'];
+const MODEL_FALLBACK=['gemini-2.0-flash','gemini-2.5-flash','gemini-flash-latest'];
+// 낡은/느린 모델로 고정됐던 설정 한 번 초기화 → 빠른 모델부터
+if(localStorage.getItem('wooriai_model_reset')!=='2'){ state.model='gemini-2.0-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','2'); }
 
 function buildPrompt(){
   const today=new Date().toISOString().slice(0,10);
@@ -652,12 +654,12 @@ function buildPrompt(){
 출력: {"events":[{"title":"현장학습","date":"${today.slice(0,4)}-08-27","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]},{"title":"체육활동","date":"${today.slice(0,4)}-08-28","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]}],"tasks":[],"supplies":[],"notes":[]}`;
 }
 
-async function requestGemini(model, parts, noThink){
+async function requestGemini(model, parts, noThink, timeoutMs){
   const url=`${API_BASE}/models/${model}:generateContent?key=${state.apiKey}`;
   const gc={ responseMimeType:'application/json' };
   if(/2\.5/.test(model) && !noThink) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
   const ctrl=new AbortController();
-  const to=setTimeout(()=>ctrl.abort(), 30000);                    // 30초 넘으면 중단(무한 대기 방지)
+  const to=setTimeout(()=>ctrl.abort(), timeoutMs||25000);         // 넘으면 중단(무한 대기 방지)
   try{
     return await fetch(url,{
       method:'POST', headers:{'Content-Type':'application/json'}, signal:ctrl.signal,
@@ -685,12 +687,14 @@ function friendlyErr(status,msg){
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
 async function callGeminiText(parts){
   let lastStatus=0, lastMsg='';
+  const deadline=Date.now()+40000;   // 전체 40초 안에 끝내기(멈춤 방지)
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
     let noThink=false;
-    for(let attempt=0; attempt<3; attempt++){
+    for(let attempt=0; attempt<2; attempt++){
+      if(Date.now()>deadline) throw new Error('AI 응답이 너무 느려요. 인터넷 상태를 확인하고 잠시 후 다시 시도해 주세요.');
       let res;
-      try{ res=await requestGemini(m,parts,noThink); }
+      try{ res=await requestGemini(m,parts,noThink, Math.max(4000, Math.min(25000, deadline-Date.now()))); }
       catch(e){
         if(e.name==='AbortError'){ lastStatus=0; lastMsg='시간 초과';
           if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
