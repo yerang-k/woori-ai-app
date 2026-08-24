@@ -399,7 +399,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v26 · 새 공지 알림';
+const APP_VERSION='v27 · 영상·놀이 공유';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -409,7 +409,8 @@ const LS = {
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
   GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
   PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen', TIMER:'wooriai_timer',
-  NOTIFY:'wooriai_notify', SEEN:'wooriai_seen', SEENINIT:'wooriai_seen_init'
+  NOTIFY:'wooriai_notify', SEEN:'wooriai_seen', SEENINIT:'wooriai_seen_init',
+  SAVEDDEL:'wooriai_saved_plays_deleted', SCREENSESS:'wooriai_screen_sessions', SCREENDEL:'wooriai_screen_deleted'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -429,9 +430,21 @@ const state = {
   savedPlaces: JSON.parse(localStorage.getItem(LS.SAVEDPLACES) || '[]'),   // 저장한 나들이 장소(가족 공유)
   placesDeleted: JSON.parse(localStorage.getItem(LS.PLACESDEL) || '{}'),
   goal: localStorage.getItem(LS.GOAL) || '아무거나',   // 배움 목표(V0.6)
-  screen: JSON.parse(localStorage.getItem(LS.SCREEN) || '{}'),   // 영상 시청 기록 {날짜:분}
+  savedDeleted: JSON.parse(localStorage.getItem(LS.SAVEDDEL) || '{}'),   // 저장 놀이 삭제표시(가족 공유)
+  screenSessions: JSON.parse(localStorage.getItem(LS.SCREENSESS) || 'null'),  // 영상 기록(세션 단위)
+  screenDeleted: JSON.parse(localStorage.getItem(LS.SCREENDEL) || '{}'),
   notify: localStorage.getItem(LS.NOTIFY)!=='0',   // 새 공지 알림(기본 켜짐)
 };
+// 구버전 영상기록 {날짜:분} → 세션 목록으로 이관
+if(state.screenSessions===null){
+  const old=JSON.parse(localStorage.getItem(LS.SCREEN) || '{}');
+  state.screenSessions=Object.keys(old).filter(d=>old[d]>0).map(d=>({id:'sc'+d, date:d, min:old[d], updatedAt:Date.now()}));
+  localStorage.setItem(LS.SCREENSESS, JSON.stringify(state.screenSessions));
+}
+function savePlaysLocal(){ localStorage.setItem(LS.SAVED, JSON.stringify(state.saved));
+  localStorage.setItem(LS.SAVEDDEL, JSON.stringify(state.savedDeleted)); scheduleSync(); }
+function saveScreenLocal(){ localStorage.setItem(LS.SCREENSESS, JSON.stringify(state.screenSessions));
+  localStorage.setItem(LS.SCREENDEL, JSON.stringify(state.screenDeleted)); scheduleSync(); }
 function savePlaces(){ localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
   localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted)); scheduleSync(); }
 // 저장 + (가족 연결돼 있으면) 동기화 예약
@@ -503,7 +516,10 @@ function mergeStates(a, b){
   });
   entries.sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
   const pm=mergeById(a.places,a.placesDeleted,b.places,b.placesDeleted);
-  return {entries, deleted:em.deleted, places:pm.items, placesDeleted:pm.deleted};
+  const plm=mergeById(a.plays,a.playsDeleted,b.plays,b.playsDeleted);          // 저장 놀이
+  const scm=mergeById(a.screen,a.screenDeleted,b.screen,b.screenDeleted);      // 영상 기록(세션)
+  return {entries, deleted:em.deleted, places:pm.items, placesDeleted:pm.deleted,
+    plays:plm.items, playsDeleted:plm.deleted, screen:scm.items, screenDeleted:scm.deleted};
 }
 // 공지 한 줄 요약(알림용)
 function entrySummary(en){ const s=en.structured||{};
@@ -534,6 +550,8 @@ async function syncNow(manual){
     const payload={ key:state.syncKey, state:{
       entries:stripForSync(state.entries), deleted:state.deleted,
       places:state.savedPlaces, placesDeleted:state.placesDeleted,       // 나들이 장소 공유
+      plays:state.saved, playsDeleted:state.savedDeleted,                // 저장 놀이 공유
+      screen:state.screenSessions, screenDeleted:state.screenDeleted,    // 영상 기록 공유
       meta:{ childName:state.childName, photo:state.photo, at:state.metaAt }   // 이름·사진 공유
     } };
     const res=await fetch(state.syncUrl, {
@@ -543,17 +561,24 @@ async function syncNow(manual){
     const data=await res.json();
     if(!data.ok) throw new Error(data.error==='key'?'가족 키가 일치하지 않아요.':'동기화 실패: '+(data.error||''));
     const merged=mergeStates(
-      {entries:state.entries, deleted:state.deleted, places:state.savedPlaces, placesDeleted:state.placesDeleted},
+      {entries:state.entries, deleted:state.deleted, places:state.savedPlaces, placesDeleted:state.placesDeleted,
+       plays:state.saved, playsDeleted:state.savedDeleted, screen:state.screenSessions, screenDeleted:state.screenDeleted},
       data.state||{});
     state.entries=merged.entries; state.deleted=merged.deleted;
     state.savedPlaces=merged.places; state.placesDeleted=merged.placesDeleted;
+    state.saved=merged.plays; state.savedDeleted=merged.playsDeleted;
+    state.screenSessions=merged.screen; state.screenDeleted=merged.screenDeleted;
     localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
     localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
     localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
     localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted));
+    localStorage.setItem(LS.SAVED, JSON.stringify(state.saved));
+    localStorage.setItem(LS.SAVEDDEL, JSON.stringify(state.savedDeleted));
+    localStorage.setItem(LS.SCREENSESS, JSON.stringify(state.screenSessions));
+    localStorage.setItem(LS.SCREENDEL, JSON.stringify(state.screenDeleted));
     ensureShareImages();   // 수신한 사진 공지에도 공유용 축소본 채움(재공유 대비)
     notifyNewEntries();    // 가족이 새로 등록한 공지 알림
-    if(typeof renderSavedPlaces==='function') renderSavedPlaces();
+    if(typeof renderSavedPlaces==='function'){ renderSavedPlaces(); renderSavedPlays(); renderScreen(); }
     // 이름·사진: 상대가 더 최근에 바꿨으면 반영
     const rmeta=data.state&&data.state.meta;
     if(rmeta && (rmeta.at||0) > (state.metaAt||0)){
@@ -1233,9 +1258,9 @@ function bindPlayCards(container){
 }
 function toggleSavePlay(p){
   const key=p.title||''; const i=state.saved.findIndex(s=>(s.title||'')===key);
-  if(i>=0){ state.saved.splice(i,1); toast('저장 해제했어요'); } else { state.saved.push(p); toast('놀이를 저장했어요 ⭐'); }
-  localStorage.setItem(LS.SAVED, JSON.stringify(state.saved));
-  renderSavedPlays();
+  if(i>=0){ const rm=state.saved.splice(i,1)[0]; if(rm.id) state.savedDeleted[rm.id]=Date.now(); toast('저장 해제했어요'); }
+  else { state.saved.push({...p, id:'pl'+Date.now()+Math.random().toString(36).slice(2,6), updatedAt:Date.now()}); toast('놀이를 저장했어요 ⭐'); }
+  savePlaysLocal(); renderSavedPlays();
   document.querySelectorAll('#playResults .play-card').forEach(c=>{ const b=c.querySelector('[data-savebtn]'); if(b) b.textContent=isSavedPlay(c.dataset.title)?'★':'☆'; });
 }
 function renderPlays(plays){ $('playResults').innerHTML=plays.map(playCardHtml).join(''); bindPlayCards($('playResults')); }
@@ -1321,25 +1346,24 @@ $('btnAddPlace').onclick=()=>{
 /* ================= 영상 시청 기록 ================= */
 const GUIDE_MIN=60;   // 만 4~5세 하루 권장(WHO) 참고선
 function fmtMin(m){ if(!m) return '0분'; const h=Math.floor(m/60), mm=m%60; return h?`${h}시간${mm?' '+mm+'분':''}`:`${mm}분`; }
-let lastScreenAdd=null;
-function saveScreen(){ localStorage.setItem(LS.SCREEN, JSON.stringify(state.screen)); }
+let lastScreenAdd=null;   // 방금 추가한 세션 id(취소용)
+function dayTotal(dateKey){ return state.screenSessions.filter(s=>s.date===dateKey).reduce((a,b)=>a+(b.min||0),0); }
 function addScreen(min){
   const k=ymd(new Date());
-  state.screen[k]=(state.screen[k]||0)+min;
-  lastScreenAdd={date:k, min};
-  saveScreen(); renderScreen(); toast(fmtMin(min)+' 기록했어요');
+  const sess={ id:'sc'+Date.now()+Math.random().toString(36).slice(2,6), date:k, min, updatedAt:Date.now() };
+  state.screenSessions.push(sess); lastScreenAdd=sess.id;
+  saveScreenLocal(); renderScreen(); toast(fmtMin(min)+' 기록했어요');
 }
 function renderScreen(){
   const today=ymd(new Date());
-  const t=state.screen[today]||0;
+  const t=dayTotal(today);
   const el=$('todayTotal'); el.textContent=fmtMin(t); el.classList.toggle('over', t>GUIDE_MIN);
   $('screenGuide').innerHTML = t>GUIDE_MIN
     ? `오늘 권장 시간(1시간)을 <b>${fmtMin(t-GUIDE_MIN)}</b> 넘었어요. (만 4~5세 하루 1시간 이내 권장·WHO)`
-    : `만 4~5세는 하루 1시간 이내 권장(WHO). 남은 권장: ${fmtMin(GUIDE_MIN-t)}`;
-  // 최근 7일
+    : `만 4~5세는 하루 1시간 이내 권장(WHO). 남은 권장: ${fmtMin(Math.max(0,GUIDE_MIN-t))}`;
   const days=[];
   for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); days.push(ymd(d)); }
-  const vals=days.map(k=>state.screen[k]||0);
+  const vals=days.map(dayTotal);
   const max=Math.max(GUIDE_MIN, ...vals);
   const wd=['일','월','화','수','목','금','토'];
   $('screenWeek').innerHTML=days.map((k,i)=>{
@@ -1353,9 +1377,9 @@ function renderScreen(){
 document.querySelectorAll('.addmin').forEach(b=>b.onclick=()=>addScreen(+b.dataset.min));
 $('undoScreen').onclick=()=>{
   if(!lastScreenAdd){ toast('취소할 기록이 없어요.'); return; }
-  const {date,min}=lastScreenAdd;
-  state.screen[date]=Math.max(0,(state.screen[date]||0)-min);
-  lastScreenAdd=null; saveScreen(); renderScreen(); toast('방금 추가를 취소했어요');
+  const i=state.screenSessions.findIndex(s=>s.id===lastScreenAdd);
+  if(i>=0){ state.screenSessions.splice(i,1); state.screenDeleted[lastScreenAdd]=Date.now(); }
+  lastScreenAdd=null; saveScreenLocal(); renderScreen(); toast('방금 추가를 취소했어요');
 };
 
 /* ---- 시청 타이머 ---- */
@@ -1424,6 +1448,10 @@ state.entries.forEach(en=>{ const s=en.structured; if(s && !s.done){ s.done={}; 
 let _pmig=false;
 state.savedPlaces.forEach(p=>{ if(!p.id){ p.id=newPlaceId(); p.updatedAt=p.updatedAt||Date.now(); _pmig=true; } });
 if(_pmig) localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+// 저장 놀이에 id·updatedAt 부여
+let _plmig=false;
+state.saved.forEach(p=>{ if(!p.id){ p.id='pl'+Date.now()+Math.random().toString(36).slice(2,6); p.updatedAt=p.updatedAt||Date.now(); _plmig=true; } });
+if(_plmig) localStorage.setItem(LS.SAVED, JSON.stringify(state.saved));
 
 render();
 // 마지막으로 보던 탭 복원(앱 전환/새로고침 후에도 유지)

@@ -22,6 +22,10 @@ var DEL_NAME   = 'deleted'; // 공지 삭제표시 시트
 var META_NAME  = 'meta';    // 아이 이름·사진 저장 시트
 var PLC_NAME   = 'places';  // 나들이 저장 장소 시트
 var PLCDEL_NAME= 'places_deleted'; // 장소 삭제표시 시트
+var PLAY_NAME  = 'plays';   // 저장 놀이 시트
+var PLAYDEL_NAME= 'plays_deleted';
+var SCR_NAME   = 'screen';  // 영상 시청 기록(세션) 시트
+var SCRDEL_NAME= 'screen_deleted';
 
 function KEY_() {
   return PropertiesService.getScriptProperties().getProperty('FAMILY_KEY') || '';
@@ -65,7 +69,26 @@ function read_() {
   var pd = sheet_(PLCDEL_NAME, ['id', 'deletedAt']);
   var pdv = pd.getDataRange().getValues();
   for (var q = 1; q < pdv.length; q++) { if (pdv[q][0]) placesDeleted[pdv[q][0]] = Number(pdv[q][1]) || 0; }
-  return { entries: entries, deleted: deleted, meta: meta, places: places, placesDeleted: placesDeleted };
+  // 저장 놀이
+  var plays = [];
+  var pls = sheet_(PLAY_NAME, ['id', 'updatedAt', 'json']);
+  var plv = pls.getDataRange().getValues();
+  for (var r = 1; r < plv.length; r++) { if (plv[r][0]) { try { plays.push(JSON.parse(plv[r][2])); } catch (e) {} } }
+  var playsDeleted = {};
+  var pld = sheet_(PLAYDEL_NAME, ['id', 'deletedAt']);
+  var pldv = pld.getDataRange().getValues();
+  for (var s2 = 1; s2 < pldv.length; s2++) { if (pldv[s2][0]) playsDeleted[pldv[s2][0]] = Number(pldv[s2][1]) || 0; }
+  // 영상 시청 기록(세션)
+  var screen = [];
+  var scs = sheet_(SCR_NAME, ['id', 'updatedAt', 'json']);
+  var scv = scs.getDataRange().getValues();
+  for (var t2 = 1; t2 < scv.length; t2++) { if (scv[t2][0]) { try { screen.push(JSON.parse(scv[t2][2])); } catch (e) {} } }
+  var screenDeleted = {};
+  var scd = sheet_(SCRDEL_NAME, ['id', 'deletedAt']);
+  var scdv = scd.getDataRange().getValues();
+  for (var u2 = 1; u2 < scdv.length; u2++) { if (scdv[u2][0]) screenDeleted[scdv[u2][0]] = Number(scdv[u2][1]) || 0; }
+  return { entries: entries, deleted: deleted, meta: meta, places: places, placesDeleted: placesDeleted,
+    plays: plays, playsDeleted: playsDeleted, screen: screen, screenDeleted: screenDeleted };
 }
 
 // 저장소 통째로 다시 쓰기
@@ -93,6 +116,26 @@ function write_(state) {
   var pdd = state.placesDeleted || {};
   var pdrows = Object.keys(pdd).map(function (id) { return [id, pdd[id]]; });
   if (pdrows.length) pd.getRange(2, 1, pdrows.length, 2).setValues(pdrows);
+  // 저장 놀이
+  var pls = sheet_(PLAY_NAME, ['id', 'updatedAt', 'json']);
+  pls.clearContents(); pls.appendRow(['id', 'updatedAt', 'json']);
+  var plrows = (state.plays || []).map(function (e) { return [e.id, e.updatedAt || 0, JSON.stringify(e)]; });
+  if (plrows.length) pls.getRange(2, 1, plrows.length, 3).setValues(plrows);
+  var pld = sheet_(PLAYDEL_NAME, ['id', 'deletedAt']);
+  pld.clearContents(); pld.appendRow(['id', 'deletedAt']);
+  var pldd = state.playsDeleted || {};
+  var pldrows = Object.keys(pldd).map(function (id) { return [id, pldd[id]]; });
+  if (pldrows.length) pld.getRange(2, 1, pldrows.length, 2).setValues(pldrows);
+  // 영상 시청 기록(세션)
+  var scs = sheet_(SCR_NAME, ['id', 'updatedAt', 'json']);
+  scs.clearContents(); scs.appendRow(['id', 'updatedAt', 'json']);
+  var scrows = (state.screen || []).map(function (e) { return [e.id, e.updatedAt || 0, JSON.stringify(e)]; });
+  if (scrows.length) scs.getRange(2, 1, scrows.length, 3).setValues(scrows);
+  var scd = sheet_(SCRDEL_NAME, ['id', 'deletedAt']);
+  scd.clearContents(); scd.appendRow(['id', 'deletedAt']);
+  var scdd = state.screenDeleted || {};
+  var scdrows = Object.keys(scdd).map(function (id) { return [id, scdd[id]]; });
+  if (scdrows.length) scd.getRange(2, 1, scdrows.length, 2).setValues(scdrows);
 }
 
 // id별 병합(최신 우선 + 삭제표시). 클라이언트와 동일 규칙.
@@ -115,9 +158,14 @@ function mergeById_(aItems, aDel, bItems, bDel) {
 function merge_(a, b) {
   var em = mergeById_(a.entries, a.deleted, b.entries, b.deleted);
   var pm = mergeById_(a.places, a.placesDeleted, b.places, b.placesDeleted);
+  var plm = mergeById_(a.plays, a.playsDeleted, b.plays, b.playsDeleted);
+  var scm = mergeById_(a.screen, a.screenDeleted, b.screen, b.screenDeleted);
   var am = a.meta || { at: 0 }, bm = b.meta || { at: 0 };
   var meta = (bm.at || 0) > (am.at || 0) ? bm : am;   // 이름·사진: 최근 변경 우선
-  return { entries: em.items, deleted: em.deleted, meta: meta, places: pm.items, placesDeleted: pm.deleted };
+  return { entries: em.items, deleted: em.deleted, meta: meta,
+    places: pm.items, placesDeleted: pm.deleted,
+    plays: plm.items, playsDeleted: plm.deleted,
+    screen: scm.items, screenDeleted: scm.deleted };
 }
 
 function doGet(e) {
@@ -133,7 +181,7 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch (err) { return json_({ ok: false, error: 'busy' }); }
   try {
-    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {} };
+    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {}, plays: [], playsDeleted: {}, screen: [], screenDeleted: {} };
     var merged = merge_(read_(), incoming);
     write_(merged);
     return json_({ ok: true, state: merged });
