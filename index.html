@@ -417,7 +417,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v36 · 멈춤방지·빠른모델';
+const APP_VERSION='v37 · 오류코드 표시';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -680,8 +680,8 @@ function friendlyErr(status,msg){
   if(isQuota(status,msg))
     return '오늘 무료 사용량(AI 요청 수)을 다 쓴 것 같아요. 잠시 후·또는 내일 다시 시도해 주세요. (구글 AI Studio에서 사용량 확인 가능)';
   if(isOverload(status,msg))
-    return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 시도해 주세요.';
-  return 'AI 요청에 실패했어요. 잠시 후 다시 시도해 주세요.';   // 영어 원문은 화면에 안 띄움(콘솔에만)
+    return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 시도해 주세요. (코드 '+status+')';
+  return 'AI 요청에 실패했어요. 잠시 후 다시 시도해 주세요. (코드 '+status+')';   // 영어 원문은 콘솔에만
 }
 
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
