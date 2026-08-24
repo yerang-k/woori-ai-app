@@ -398,7 +398,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v24 · 원문 사진 공유';
+const APP_VERSION='v25 · 원문 사진 재업로드';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -469,7 +469,11 @@ function stripForSync(entries){
 async function ensureShareImages(){
   let changed=false;
   for(const en of state.entries){ const s=en.source;
-    if(s && s.image && s.image!=='__local__' && !s.shareImage){ s.shareImage=await shrinkToFit(s.image); changed=true; } }
+    if(s && s.image && s.image!=='__local__' && !s.shareImage){
+      s.shareImage=await shrinkToFit(s.image);
+      if(s.image.length>MAXB64) en.updatedAt=Date.now();   // 원본 큰 사진: 서버에 재업로드되게 갱신
+      changed=true;
+    } }
   if(changed) localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
 }
 // id별 병합: updatedAt 최신 우선 + 삭제표시 반영
@@ -1395,7 +1399,16 @@ if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); i
 else if(_tab==='screen'){ switchTab('screen'); }
 resumeTimer();   // 다른 탭에 있어도 진행 중 타이머는 계속 돌아가게
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
-ensureShareImages().then(()=>{ if(syncConfigured()) syncNow(false); });   // 공유용 사진 채운 뒤 열 때 동기화
+(async()=>{
+  await ensureShareImages();                     // 공유용 사진 생성(+큰 원본은 updatedAt 갱신)
+  if(!localStorage.getItem('wooriai_reshared')){ // v24 이전에 사진 없이 올라간 공지를 한 번 재업로드
+    let ch=false;
+    state.entries.forEach(en=>{ if(en.source && en.source.shareImage){ en.updatedAt=Date.now(); ch=true; } });
+    if(ch) localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
+    localStorage.setItem('wooriai_reshared','1');
+  }
+  if(syncConfigured()) syncNow(false);
+})();
 if(location.search.includes('selftest')) selftest();
 </script>
 </body>
