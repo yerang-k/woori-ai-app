@@ -211,6 +211,12 @@
     </div>
     <div id="savedPlaces"></div>
     <div id="placeResults"></div>
+    <div class="play-panel" style="margin-top:16px">
+      <div class="mini-h">✍️ 내가 아는 곳 직접 등록</div>
+      <input type="text" id="manualPlaceName" placeholder="장소 이름 (예: ○○키즈카페)">
+      <input type="text" id="manualPlaceMemo" placeholder="메모 (선택) — 위치·왜 좋은지" style="margin-top:8px">
+      <button class="btn ghost" id="btnAddPlace" style="margin-top:8px">＋ 저장 목록에 추가</button>
+    </div>
    </div>
   </div>
 </main>
@@ -319,7 +325,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v15 · 놀이+학습 목표';
+const APP_VERSION='v16 · 탭유지·장소등록';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -327,7 +333,7 @@ const LS = {
   PHOTO:'wooriai_photo', METAAT:'wooriai_metaat',
   INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
-  GOAL:'wooriai_goal'
+  GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -963,6 +969,7 @@ function switchTab(tab){
   $('playView').style.display  = tab==='play'?'':'none';
   $('fab').style.display = tab==='board'?'':'none';
   toggleFab(false);
+  localStorage.setItem(LS.TAB, tab);   // 마지막 탭 기억(앱 전환 후 복원)
   if(tab==='play'){ renderInterests(); renderSavedPlays(); $('playGoal').value=state.goal; $('regionInput').value=state.region; renderSavedPlaces(); }
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
@@ -970,6 +977,7 @@ function switchSub(sub){
   document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('on', b.dataset.sub===sub));
   $('makeSub').style.display  = sub==='make'?'':'none';
   $('placeSub').style.display = sub==='place'?'':'none';
+  localStorage.setItem(LS.SUB, sub);
 }
 document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>switchSub(b.dataset.sub));
 function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
@@ -1113,6 +1121,15 @@ function renderSavedPlaces(){
   box.innerHTML=`<div class="saved-h">⭐ 저장한 곳 ${state.savedPlaces.length}</div>`+state.savedPlaces.map(placeCardHtml).join('');
   bindPlaceCards(box);
 }
+$('btnAddPlace').onclick=()=>{
+  const name=$('manualPlaceName').value.trim();
+  if(!name){ toast('장소 이름을 입력해 주세요.'); return; }
+  if(state.savedPlaces.some(s=>(s.name||'')===name)){ toast('이미 저장된 곳이에요.'); return; }
+  state.savedPlaces.push({name, type:'직접 등록', why:$('manualPlaceMemo').value.trim()});
+  localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
+  $('manualPlaceName').value=''; $('manualPlaceMemo').value='';
+  renderSavedPlaces(); toast('저장 목록에 추가했어요 ⭐');
+};
 
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
@@ -1132,6 +1149,9 @@ function selftest(){
 state.entries.forEach(en=>{ const s=en.structured; if(s && !s.done){ s.done={}; (s.doneTasks||[]).forEach((v,i)=>{ if(v) s.done['g'+i]=true; }); } });
 
 render();
+// 마지막으로 보던 탭 복원(앱 전환/새로고침 후에도 유지)
+const _tab=localStorage.getItem(LS.TAB)||'board';
+if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); if(_sub) switchSub(_sub); }
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
 if(syncConfigured()) syncNow(false);   // 열 때 가족 변경분 가져오기
 if(location.search.includes('selftest')) selftest();
