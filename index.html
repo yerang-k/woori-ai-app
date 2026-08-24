@@ -192,18 +192,18 @@
     <div class="play-panel">
       <div class="mini-h">⏱ 시청 타이머</div>
       <div id="timerIdle">
+        <p class="hint" style="margin-bottom:8px">알림 시간을 고르면 시작해요. 그 시간이 되면 알림이 울리고, 시간은 계속 잽니다. <b>정지</b>를 누르면 실제 본 시간이 오늘 기록에 더해져요.</p>
         <div class="quickbtns">
-          <button class="btn ghost settimer" data-min="10">10분</button>
-          <button class="btn ghost settimer" data-min="20">20분</button>
-          <button class="btn ghost settimer" data-min="30">30분</button>
-          <button class="btn ghost settimer" data-min="60">1시간</button>
+          <button class="btn ghost settimer" data-min="10">10분 알림</button>
+          <button class="btn ghost settimer" data-min="20">20분 알림</button>
+          <button class="btn ghost settimer" data-min="30">30분 알림</button>
+          <button class="btn ghost settimer" data-min="60">1시간 알림</button>
         </div>
-        <p class="hint">시간을 고르면 카운트다운이 시작돼요. 끝나면 알림이 울리고 오늘 기록에 자동 추가돼요.</p>
       </div>
       <div id="timerRunning" style="display:none;text-align:center">
         <div id="timerDisplay">00:00</div>
         <div id="timerLabel" class="hint"></div>
-        <button class="btn ghost" id="stopTimer" style="margin-top:10px">지금 그만 (여기까지 기록)</button>
+        <button class="btn primary" id="stopTimer" style="margin-top:12px">⏹ 정지 (기록하기)</button>
       </div>
     </div>
     <div class="play-panel" style="text-align:center">
@@ -398,7 +398,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v22 · 시청 타이머';
+const APP_VERSION='v23 · 스톱워치 타이머';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1292,37 +1292,41 @@ function beep(){ try{ const a=new (window.AudioContext||window.webkitAudioContex
   o.connect(g); g.connect(a.destination); o.frequency.value=880; g.gain.value=0.2; o.start(); o.stop(a.currentTime+0.7); }catch(e){} }
 function fireAlarm(min){
   try{ navigator.vibrate && navigator.vibrate([400,150,400,150,400]); }catch(e){}
-  try{ if(window.Notification && Notification.permission==='granted') new Notification('우리 아이 앱', {body:`영상 시간(${fmtMin(min)})이 끝났어요! 이제 그만 볼 시간이에요.`}); }catch(e){}
+  try{ if(window.Notification && Notification.permission==='granted') new Notification('우리 아이 앱', {body:`영상 본 지 ${fmtMin(min)}이 됐어요! (계속 기록 중)`}); }catch(e){}
   beep();
-  setTimeout(()=>alert(`⏰ 영상 시간(${fmtMin(min)})이 끝났어요!\n이제 그만 볼 시간이에요.`), 50);
+  setTimeout(()=>alert(`⏰ 영상 본 지 ${fmtMin(min)}이 됐어요!\n계속 재는 중이에요. 다 보면 '정지'를 눌러주세요.`), 50);
 }
+function fmtElapsed(s){ const h=Math.floor(s/3600), m=Math.floor(s%3600/60), ss=s%60;
+  return (h?h+':':'')+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
 function tickTimer(){
   const t=getTimer(); if(!t){ clearInterval(timerInt); timerInt=null; showTimerIdle(); return; }
-  const rem=t.target-Date.now();
-  if(rem<=0){ clearInterval(timerInt); timerInt=null; localStorage.removeItem(LS.TIMER);
-    addScreen(t.min); showTimerIdle(); fireAlarm(t.min); return; }
-  const s=Math.ceil(rem/1000);
-  $('timerDisplay').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  const el=Date.now()-t.start;
+  $('timerDisplay').textContent=fmtElapsed(Math.floor(el/1000));
+  const passed = el >= t.alarmMin*60000;
+  $('timerLabel').innerHTML = passed
+    ? `⏰ 알림 시간(${fmtMin(t.alarmMin)}) 지남 — 계속 재는 중`
+    : `알림 기준: ${fmtMin(t.alarmMin)}`;
+  if(passed && !t.alarmed){ t.alarmed=true; localStorage.setItem(LS.TIMER, JSON.stringify(t)); fireAlarm(t.alarmMin); }
 }
 function startTimer(min){
-  localStorage.setItem(LS.TIMER, JSON.stringify({target:Date.now()+min*60000, min}));
+  localStorage.setItem(LS.TIMER, JSON.stringify({start:Date.now(), alarmMin:min, alarmed:false}));
   if(window.Notification && Notification.permission==='default'){ try{ Notification.requestPermission(); }catch(e){} }
   showTimerRunning(min); clearInterval(timerInt); timerInt=setInterval(tickTimer,1000); tickTimer();
-  toast(`${fmtMin(min)} 타이머 시작`);
+  toast('시작했어요 — 다 보면 정지를 눌러주세요');
 }
 function resumeTimer(){
   const t=getTimer();
   if(!t){ showTimerIdle(); return; }
-  if(Date.now()>=t.target){ localStorage.removeItem(LS.TIMER); addScreen(t.min); showTimerIdle(); toast('타이머가 끝나 오늘 기록에 추가했어요'); return; }
-  showTimerRunning(t.min); clearInterval(timerInt); timerInt=setInterval(tickTimer,1000); tickTimer();
+  showTimerRunning(t.alarmMin); clearInterval(timerInt); timerInt=setInterval(tickTimer,1000); tickTimer();
+}
+function stopAndLog(){
+  const t=getTimer(); if(!t) return;
+  const mins=Math.max(1, Math.round((Date.now()-t.start)/60000));
+  clearInterval(timerInt); timerInt=null; localStorage.removeItem(LS.TIMER);
+  addScreen(mins); showTimerIdle();
 }
 document.querySelectorAll('.settimer').forEach(b=>b.onclick=()=>startTimer(+b.dataset.min));
-$('stopTimer').onclick=()=>{
-  const t=getTimer(); if(!t) return;
-  const elapsed=Math.max(1, Math.round((Date.now()-(t.target-t.min*60000))/60000));
-  clearInterval(timerInt); timerInt=null; localStorage.removeItem(LS.TIMER);
-  addScreen(elapsed); showTimerIdle();
-};
+$('stopTimer').onclick=stopAndLog;
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden && getTimer()) tickTimer(); });
 
 /* ================= 자체 점검 (?selftest) ================= */
