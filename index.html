@@ -50,6 +50,7 @@
   .steps li{margin:3px 0}
   .learn{background:var(--accent-soft);border-radius:10px;padding:9px 11px;font-size:14px}
   /* 영상 시청 기록 */
+  #timerDisplay{font-size:44px;font-weight:800;color:var(--accent);letter-spacing:1px}
   #todayTotal{font-size:36px;font-weight:800;color:var(--accent)}
   #todayTotal.over{color:#d1451b}
   .quickbtns{display:flex;gap:6px;flex-wrap:wrap}
@@ -152,6 +153,7 @@
     cursor:pointer;margin-top:14px}
   .btn.primary{background:var(--accent);color:#fff}
   .btn.ghost{background:var(--bg);color:var(--text)}
+  .btn.ghost.me-opt.on{background:var(--accent);color:#fff}
   .btn:disabled{opacity:.5}
   .preview-img{max-width:100%;border-radius:10px;margin-top:10px;display:none}
   .hint{font-size:13px;color:var(--sub);margin:6px 0 0}
@@ -187,6 +189,23 @@
   </div>
   <div id="boardView"><div id="board"></div></div>
   <div id="screenView" style="display:none">
+    <div class="play-panel">
+      <div class="mini-h">⏱ 시청 타이머</div>
+      <div id="timerIdle">
+        <div class="quickbtns">
+          <button class="btn ghost settimer" data-min="10">10분</button>
+          <button class="btn ghost settimer" data-min="20">20분</button>
+          <button class="btn ghost settimer" data-min="30">30분</button>
+          <button class="btn ghost settimer" data-min="60">1시간</button>
+        </div>
+        <p class="hint">시간을 고르면 카운트다운이 시작돼요. 끝나면 알림이 울리고 오늘 기록에 자동 추가돼요.</p>
+      </div>
+      <div id="timerRunning" style="display:none;text-align:center">
+        <div id="timerDisplay">00:00</div>
+        <div id="timerLabel" class="hint"></div>
+        <button class="btn ghost" id="stopTimer" style="margin-top:10px">지금 그만 (여기까지 기록)</button>
+      </div>
+    </div>
     <div class="play-panel" style="text-align:center">
       <div class="mini-h" style="text-align:left">오늘 본 영상</div>
       <div id="todayTotal">0분</div>
@@ -379,7 +398,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v21 · 영상시간 기록';
+const APP_VERSION='v22 · 시청 타이머';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -388,7 +407,7 @@ const LS = {
   INTERESTS:'wooriai_interests', REACTIONS:'wooriai_reactions',
   SAVED:'wooriai_saved_plays', REGION:'wooriai_region', SAVEDPLACES:'wooriai_saved_places',
   GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
-  PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen'
+  PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen', TIMER:'wooriai_timer'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -1003,7 +1022,7 @@ $('btnSaveKey').onclick=()=>{
 $('btnCancelKey').onclick=()=>closeModal('keyModal');
 
 /* ---- 가족 공유 ---- */
-function markMe(){ document.querySelectorAll('.me-opt').forEach(b=>b.classList.toggle('primary', b.dataset.me===state.me)); }
+function markMe(){ document.querySelectorAll('.me-opt').forEach(b=>b.classList.toggle('on', b.dataset.me===state.me)); }
 function openFamily(){
   $('syncUrlInput').value=state.syncUrl; $('syncKeyInput').value=state.syncKey; markMe();
   setSyncStatus(syncConfigured()?'연결됨':'아직 연결 안 됨');
@@ -1045,7 +1064,7 @@ function switchTab(tab){
   toggleFab(false);
   localStorage.setItem(LS.TAB, tab);   // 마지막 탭 기억(앱 전환 후 복원)
   if(tab==='play'){ renderInterests(); renderSavedPlays(); $('playGoal').value=state.goal; $('regionInput').value=state.region; renderSavedPlaces(); }
-  if(tab==='screen') renderScreen();
+  if(tab==='screen'){ renderScreen(); resumeTimer(); }
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 function switchSub(sub){
@@ -1264,6 +1283,48 @@ $('undoScreen').onclick=()=>{
   lastScreenAdd=null; saveScreen(); renderScreen(); toast('방금 추가를 취소했어요');
 };
 
+/* ---- 시청 타이머 ---- */
+let timerInt=null;
+function getTimer(){ try{ return JSON.parse(localStorage.getItem(LS.TIMER)||'null'); }catch(e){ return null; } }
+function showTimerRunning(min){ $('timerIdle').style.display='none'; $('timerRunning').style.display=''; $('timerLabel').textContent=`${fmtMin(min)} 타이머 진행 중`; }
+function showTimerIdle(){ $('timerIdle').style.display=''; $('timerRunning').style.display='none'; }
+function beep(){ try{ const a=new (window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(), g=a.createGain();
+  o.connect(g); g.connect(a.destination); o.frequency.value=880; g.gain.value=0.2; o.start(); o.stop(a.currentTime+0.7); }catch(e){} }
+function fireAlarm(min){
+  try{ navigator.vibrate && navigator.vibrate([400,150,400,150,400]); }catch(e){}
+  try{ if(window.Notification && Notification.permission==='granted') new Notification('우리 아이 앱', {body:`영상 시간(${fmtMin(min)})이 끝났어요! 이제 그만 볼 시간이에요.`}); }catch(e){}
+  beep();
+  setTimeout(()=>alert(`⏰ 영상 시간(${fmtMin(min)})이 끝났어요!\n이제 그만 볼 시간이에요.`), 50);
+}
+function tickTimer(){
+  const t=getTimer(); if(!t){ clearInterval(timerInt); timerInt=null; showTimerIdle(); return; }
+  const rem=t.target-Date.now();
+  if(rem<=0){ clearInterval(timerInt); timerInt=null; localStorage.removeItem(LS.TIMER);
+    addScreen(t.min); showTimerIdle(); fireAlarm(t.min); return; }
+  const s=Math.ceil(rem/1000);
+  $('timerDisplay').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+function startTimer(min){
+  localStorage.setItem(LS.TIMER, JSON.stringify({target:Date.now()+min*60000, min}));
+  if(window.Notification && Notification.permission==='default'){ try{ Notification.requestPermission(); }catch(e){} }
+  showTimerRunning(min); clearInterval(timerInt); timerInt=setInterval(tickTimer,1000); tickTimer();
+  toast(`${fmtMin(min)} 타이머 시작`);
+}
+function resumeTimer(){
+  const t=getTimer();
+  if(!t){ showTimerIdle(); return; }
+  if(Date.now()>=t.target){ localStorage.removeItem(LS.TIMER); addScreen(t.min); showTimerIdle(); toast('타이머가 끝나 오늘 기록에 추가했어요'); return; }
+  showTimerRunning(t.min); clearInterval(timerInt); timerInt=setInterval(tickTimer,1000); tickTimer();
+}
+document.querySelectorAll('.settimer').forEach(b=>b.onclick=()=>startTimer(+b.dataset.min));
+$('stopTimer').onclick=()=>{
+  const t=getTimer(); if(!t) return;
+  const elapsed=Math.max(1, Math.round((Date.now()-(t.target-t.min*60000))/60000));
+  clearInterval(timerInt); timerInt=null; localStorage.removeItem(LS.TIMER);
+  addScreen(elapsed); showTimerIdle();
+};
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && getTimer()) tickTimer(); });
+
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
   const r=normalizeStructured('```json\n{"title":"현장학습","date":"2026-09-12","time":"08:30","tasks":["물통 준비","모자 준비"],"notes":["08:30까지 등원"]}\n```');
@@ -1290,6 +1351,7 @@ render();
 const _tab=localStorage.getItem(LS.TAB)||'board';
 if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); if(_sub) switchSub(_sub); }
 else if(_tab==='screen'){ switchTab('screen'); }
+resumeTimer();   // 다른 탭에 있어도 진행 중 타이머는 계속 돌아가게
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
 if(syncConfigured()) syncNow(false);   // 열 때 가족 변경분 가져오기
 if(location.search.includes('selftest')) selftest();
