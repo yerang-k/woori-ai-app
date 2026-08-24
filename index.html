@@ -417,7 +417,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v32 · 폰 푸시(ntfy)';
+const APP_VERSION='v33 · AI 속도개선';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -654,14 +654,16 @@ function buildPrompt(){
 
 async function requestGemini(model, parts){
   const url=`${API_BASE}/models/${model}:generateContent?key=${state.apiKey}`;
-  const res=await fetch(url,{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      contents:[{parts}],
-      generationConfig:{responseMimeType:'application/json'}
-    })
-  });
-  return res;
+  const gc={ responseMimeType:'application/json' };
+  if(/2\.5/.test(model)) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(), 30000);                    // 30초 넘으면 중단(무한 대기 방지)
+  try{
+    return await fetch(url,{
+      method:'POST', headers:{'Content-Type':'application/json'}, signal:ctrl.signal,
+      body:JSON.stringify({ contents:[{parts}], generationConfig:gc })
+    });
+  } finally { clearTimeout(to); }
 }
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -687,7 +689,11 @@ async function callGeminiText(parts){
     for(let attempt=0; attempt<3; attempt++){          // 붐빔이면 같은 모델 재시도
       let res;
       try{ res=await requestGemini(m,parts); }
-      catch(e){ throw new Error('인터넷 연결이 불안정한 것 같아요. 연결을 확인하고 다시 시도해 주세요.'); }
+      catch(e){
+        if(e.name==='AbortError'){ lastStatus=0; lastMsg='응답이 너무 느려 중단했어요(시간 초과).';
+          if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
+        throw new Error('인터넷 연결이 불안정한 것 같아요. 연결을 확인하고 다시 시도해 주세요.');
+      }
       if(res.ok){
         const data=await res.json();
         const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
@@ -697,7 +703,7 @@ async function callGeminiText(parts){
       const err=await res.json().catch(()=>({}));
       lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
       if(isOverload(lastStatus,lastMsg)){
-        if(attempt<2){ await sleep(1500*(attempt+1)); continue; } // 1.5s→3s 후 재시도
+        if(attempt<2){ await sleep(1000*(attempt+1)); continue; } // 1s→2s 후 재시도(빠르게)
         break;                                                    // 계속 붐비면 다음 모델
       }
       if(isModelGone(lastStatus,lastMsg)) break;                  // 모델 교체
