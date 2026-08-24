@@ -348,7 +348,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v19 · 장소 가족공유';
+const APP_VERSION='v20 · 오류 표시';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -522,15 +522,18 @@ async function requestGemini(model, parts){
 }
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-// 붐빔/일시장애(재시도로 풀림) vs 모델없음(다른 모델로) vs 그 외 판별
-const isOverload=(s,m)=>s===503||s===429||s===500||/overload|high demand|try again later|temporarily|unavailable/i.test(m);
+// 일시장애(재시도로 풀림) vs 사용량 소진(재시도 무의미) vs 모델없음(다른 모델로) 판별
+const isOverload=(s,m)=>s===503||s===500||/overload|high demand|try again later|temporarily|unavailable/i.test(m);
+const isQuota=(s,m)=>s===429||/quota|resource_exhausted|rate limit|too many requests/i.test(m);
 const isModelGone=(s,m)=>s===404||/not found|not supported|deprecated|no longer/i.test(m);
 function friendlyErr(status,msg){
   if(/api key not valid|api_key_invalid|invalid.*key|permission|401|403/i.test(status+' '+msg))
-    return 'API 키가 올바르지 않은 것 같아요. 오른쪽 위 🔑에서 키를 다시 확인해 주세요.';
+    return 'API 키가 올바르지 않은 것 같아요. ⚙️ 설정 → Gemini API 키에서 다시 확인해 주세요.';
+  if(isQuota(status,msg))
+    return '오늘 무료 사용량(AI 요청 수)을 다 쓴 것 같아요. 잠시 후·또는 내일 다시 시도해 주세요. (구글 AI Studio에서 사용량 확인 가능)';
   if(isOverload(status,msg))
-    return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 "AI로 정리하기"를 눌러 주세요.';
-  return 'AI 정리에 실패했어요. 잠시 후 다시 시도해 주세요.\n(' + (msg||('오류 '+status)).slice(0,120) + ')';
+    return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 시도해 주세요.';
+  return 'AI 요청에 실패했어요. 잠시 후 다시 시도해 주세요.\n(' + (msg||('오류 '+status)).slice(0,150) + ')';
 }
 
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
@@ -1062,7 +1065,7 @@ JSON만 출력:
     const plays=(o.plays||[]).slice(0,5);
     if(!plays.length){ toast('추천을 만들지 못했어요. 다시 시도해 주세요.'); return; }
     renderPlays(plays);
-  }catch(err){ toast(err.message); }
+  }catch(err){ toast(err.message); $('playResults').innerHTML=`<div class="empty">${esc(err.message).replace(/\n/g,'<br>')}</div>`; }
   finally{ $('playSpin').style.display='none'; $('btnSuggestPlay').disabled=false; }
 }
 $('btnSuggestPlay').onclick=suggestPlays;
@@ -1132,7 +1135,7 @@ async function suggestPlaces(){
     const places=(o.places||[]).slice(0,8);
     if(!places.length){ toast('추천을 만들지 못했어요. 다시 시도해 주세요.'); return; }
     renderPlaces(places);
-  }catch(err){ toast(err.message); }
+  }catch(err){ toast(err.message); $('placeResults').innerHTML=`<div class="empty">${esc(err.message).replace(/\n/g,'<br>')}</div>`; }
   finally{ $('placeSpin').style.display='none'; $('btnSuggestPlace').disabled=false; }
 }
 $('btnSuggestPlace').onclick=suggestPlaces;
