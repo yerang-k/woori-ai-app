@@ -123,6 +123,7 @@
   .note-l{font-size:14px;margin:4px 0;line-height:1.45}
   .card-foot{margin-top:12px;display:flex;align-items:center;gap:10px}
   .card-foot .by{font-size:12px;color:var(--sub);margin-left:auto}
+  .foot-btn{background:var(--accent-soft);border:none;border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;color:#c05a1e;cursor:pointer}
   .group-toggle{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;
     cursor:pointer;padding:8px 2px 2px}
   .past-wrap{display:none;margin-top:6px}
@@ -399,7 +400,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v27 · 영상·놀이 공유';
+const APP_VERSION='v28 · 완료 버튼';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -748,8 +749,9 @@ function render(){
   const cards=[];
   state.entries.forEach(en=>entryCards(en).forEach(c=>cards.push(c)));
   cards.sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  const active=cards.filter(c=>!(c.dd&&c.dd.diff<0));
-  const past=cards.filter(c=>c.dd&&c.dd.diff<0).reverse();
+  const isDoneCard=c=>(c.dd&&c.dd.diff<0)||!!c.en.archived;   // 지난 일정 또는 완료 처리된 공지
+  const active=cards.filter(c=>!isDoneCard(c));
+  const past=cards.filter(isDoneCard).reverse();
 
   let html=active.map(c=>cardHtml(c,false)).join('')
     || `<div class="empty"><span class="em">✅</span>지금 챙길 공지가 없어요.</div>`;
@@ -820,9 +822,11 @@ function cardHtml(c, past){
       + c.supplies.map(v=>`<span class="chip">${esc(v)}</span>`).join('')+`</div></div>`;
   }
   const by=en.createdBy&&en.createdBy!=='나'?`<span class="by">${esc(en.createdBy)} 등록</span>`:'';
+  // 날짜 없는(📌) 공지엔 완료 버튼 — 누르면 '지난 공지'로 접힘(되돌리기 가능)
+  const doneBtn = c.general ? (en.archived?`<button class="foot-btn" data-unarchive>되돌리기</button>`:`<button class="foot-btn" data-archive>완료</button>`) : '';
   return `<div class="item card ${past?'past':''}" data-en="${en.id}">
     <div class="body">${head}${body}
-      <div class="card-foot"><span class="src" data-raw>원문 보기</span>${by}</div>
+      <div class="card-foot"><span class="src" data-raw>원문 보기</span>${doneBtn}${by}</div>
       <div class="raw">${rawHtml(en)}</div>
     </div>
     <button class="del" data-del title="삭제">✕</button>
@@ -890,6 +894,9 @@ function bindBoard(){
     }));
     // 일정 헤더 탭 → 편집
     el.querySelectorAll('[data-edit]').forEach(h=>h.addEventListener('click',()=>openEdit(en)));
+    // 완료 / 되돌리기 (날짜 없는 공지)
+    el.querySelector('[data-archive]')?.addEventListener('click',()=>{ en.archived=Date.now(); touch(en); saveEntries(); render(); toast('완료로 정리했어요'); });
+    el.querySelector('[data-unarchive]')?.addEventListener('click',()=>{ delete en.archived; touch(en); saveEntries(); render(); toast('되돌렸어요'); });
   });
 }
 
