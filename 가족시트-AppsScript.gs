@@ -168,6 +168,26 @@ function merge_(a, b) {
     screen: scm.items, screenDeleted: scm.deleted };
 }
 
+// 가족 키로부터 ntfy 채널 이름 (앱과 동일 규칙: sha256 앞 16자리)
+function ntfyTopic_() {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, KEY_(), Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) { var b = (bytes[i] + 256) % 256; hex += ('0' + b.toString(16)).slice(-2); }
+  return 'wooriai-' + hex.slice(0, 16);
+}
+// 폰 알림 발송 (개인정보 없이 "새 공지 등록됨"만)
+function notifyNtfy_(n) {
+  try {
+    UrlFetchApp.fetch('https://ntfy.sh/' + ntfyTopic_(), {
+      method: 'post',
+      contentType: 'text/plain; charset=utf-8',
+      payload: '가족이 새 공지를 등록했어요 (' + n + '건). 앱에서 확인하세요.',
+      headers: { 'Title': '우리 아이', 'Tags': 'bell', 'Priority': 'default' },
+      muteHttpExceptions: true
+    });
+  } catch (err) {}
+}
+
 function doGet(e) {
   if ((e.parameter.key || '') !== KEY_()) return json_({ ok: false, error: 'key' });
   return json_({ ok: true, state: read_() });
@@ -182,8 +202,15 @@ function doPost(e) {
   try { lock.waitLock(10000); } catch (err) { return json_({ ok: false, error: 'busy' }); }
   try {
     var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {}, plays: [], playsDeleted: {}, screen: [], screenDeleted: {} };
-    var merged = merge_(read_(), incoming);
+    var before = read_();
+    // 이번에 처음 올라온 공지 수(폰 알림용)
+    var haveIds = {};
+    (before.entries || []).forEach(function (en) { haveIds[en.id] = 1; });
+    var newCount = (incoming.entries || []).filter(function (en) { return en.id && !haveIds[en.id]; }).length;
+    var merged = merge_(before, incoming);
     write_(merged);
+    // 첫 연결(서버가 비어있던 경우)엔 알림 생략 → 기존 공지 무더기 알림 방지
+    if (newCount > 0 && (before.entries || []).length > 0) notifyNtfy_(newCount);
     return json_({ ok: true, state: merged });
   } finally {
     lock.releaseLock();
