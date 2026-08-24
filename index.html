@@ -398,7 +398,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v23 · 스톱워치 타이머';
+const APP_VERSION='v24 · 원문 사진 공유';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -452,9 +452,25 @@ function scheduleSync(){
   syncTimer=setTimeout(()=>syncNow(false), 2500);   // 변경 후 2.5초 뒤 자동 업로드
 }
 function setSyncStatus(t){ const el=document.getElementById('syncStatus'); if(el) el.textContent=t; }
-// 동기화용으로 사진(용량 큼)은 빼고 보냄
+const MAXB64=40000;  // 시트 셀(5만자) 안에 들어가도록 공유 이미지 크기 상한
+// 동기화용: 공유 가능한 작은 사진(shareImage)을 실어 보냄. 크면 못 싣고 로컬 전용(__local__)
 function stripForSync(entries){
-  return entries.map(en=>({...en, source:{...en.source, image: en.source.image?'__local__':null}}));
+  return entries.map(en=>{
+    const s=en.source||{};
+    let img;
+    if(s.shareImage) img=s.shareImage;
+    else if(s.image && s.image!=='__local__' && s.image.length<=MAXB64) img=s.image;
+    else if(s.image) img='__local__';
+    else img=null;
+    return {...en, source:{ type:s.type, rawText:s.rawText||'', image:img }};  // 원본 full 이미지·shareImage는 payload에서 제외
+  });
+}
+// 사진 있는 공지에 공유용 축소본(shareImage) 채우기 — 기존/수신 공지도 원문이 공유되게
+async function ensureShareImages(){
+  let changed=false;
+  for(const en of state.entries){ const s=en.source;
+    if(s && s.image && s.image!=='__local__' && !s.shareImage){ s.shareImage=await shrinkToFit(s.image); changed=true; } }
+  if(changed) localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
 }
 // id별 병합: updatedAt 최신 우선 + 삭제표시 반영
 function mergeById(aItems, aDel, bItems, bDel){
@@ -468,7 +484,9 @@ function mergeById(aItems, aDel, bItems, bDel){
 // 전체 상태 병합: 공지(사진 보존) + 저장 장소
 function mergeStates(a, b){
   const localImg={};
-  [...(a.entries||[]),...(b.entries||[])].forEach(e=>{ if(e.source && e.source.image && e.source.image!=='__local__') localImg[e.id]=e.source.image; });
+  // 더 화질 좋은(=더 긴) 사진을 보존 → 내 폰의 원본이 상대의 압축본으로 덮이지 않게
+  [...(a.entries||[]),...(b.entries||[])].forEach(e=>{ const im=e.source&&e.source.image;
+    if(im && im!=='__local__' && (!localImg[e.id] || im.length>localImg[e.id].length)) localImg[e.id]=im; });
   const em=mergeById(a.entries,a.deleted,b.entries,b.deleted);
   let entries=em.items.map(e=>{
     const img=(e.source&&e.source.image);
@@ -504,6 +522,7 @@ async function syncNow(manual){
     localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
     localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
     localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted));
+    ensureShareImages();   // 수신한 사진 공지에도 공유용 축소본 채움(재공유 대비)
     if(typeof renderSavedPlaces==='function') renderSavedPlaces();
     // 이름·사진: 상대가 더 최근에 바꿨으면 반영
     const rmeta=data.state&&data.state.meta;
@@ -854,10 +873,27 @@ function loadResized(file, maxSide=1568, quality=0.72){
     img.src=URL.createObjectURL(file);
   });
 }
+// 가족 공유용: 시트 셀에 들어가도록 base64 길이를 maxChars 이하로 줄인 사진(dataURL) 생성
+async function shrinkToFit(dataUrl, maxChars=MAXB64){
+  if(!dataUrl || dataUrl==='__local__') return '';
+  if(dataUrl.length<=maxChars) return dataUrl;
+  const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=dataUrl; });
+  const long=Math.max(img.width,img.height);
+  let side=Math.min(1000, long), q=0.6;
+  for(let step=0; step<14; step++){
+    const s=side/long, cw=Math.max(1,Math.round(img.width*s)), ch=Math.max(1,Math.round(img.height*s));
+    const c=document.createElement('canvas'); c.width=cw; c.height=ch; c.getContext('2d').drawImage(img,0,0,cw,ch);
+    const out=c.toDataURL('image/jpeg', q);
+    if(out.length<=maxChars) return out;
+    if(q>0.35) q-=0.1; else side=Math.round(side*0.8);
+  }
+  return '';  // 도저히 못 줄이면 공유 안 함(로컬 전용)
+}
 $('imgFile').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{
     pendingImage=await loadResized(f);   // {dataUrl, base64, mime}
+    pendingImage.shareImage=await shrinkToFit(pendingImage.dataUrl);  // 가족 공유용 축소본
     $('imgPreview').src=pendingImage.dataUrl; $('imgPreview').style.display='block';
   }catch(err){ toast('이미지를 불러오지 못했어요. 다른 사진으로 시도해 주세요.'); }
 });
@@ -879,7 +915,9 @@ async function doAnalyze(){
       createdAt:new Date().toISOString(),
       updatedAt:Date.now(),
       createdBy: state.me || '나',  // 가족 공유: 등록자(엄마/아빠)
-      source:{ type: pendingImage?'image':'text', rawText: rawText||'', image: pendingImage?pendingImage.dataUrl:null },
+      source:{ type: pendingImage?'image':'text', rawText: rawText||'',
+        image: pendingImage?pendingImage.dataUrl:null,
+        shareImage: pendingImage?pendingImage.shareImage:'' },   // 가족 공유용 축소본
       structured                  // 원문(source)과 AI 정리(structured)를 분리 저장
     });
     saveEntries(); render(); closeModal('inputModal'); toast('정리했어요 ✨');
@@ -1357,7 +1395,7 @@ if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); i
 else if(_tab==='screen'){ switchTab('screen'); }
 resumeTimer();   // 다른 탭에 있어도 진행 중 타이머는 계속 돌아가게
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
-if(syncConfigured()) syncNow(false);   // 열 때 가족 변경분 가져오기
+ensureShareImages().then(()=>{ if(syncConfigured()) syncNow(false); });   // 공유용 사진 채운 뒤 열 때 동기화
 if(location.search.includes('selftest')) selftest();
 </script>
 </body>
