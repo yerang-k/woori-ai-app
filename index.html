@@ -417,7 +417,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v34 · 사진 축소·시간표시';
+const APP_VERSION='v35 · 오류처리 개선';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -652,10 +652,10 @@ function buildPrompt(){
 출력: {"events":[{"title":"현장학습","date":"${today.slice(0,4)}-08-27","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]},{"title":"체육활동","date":"${today.slice(0,4)}-08-28","time":null,"tasks":["체육복·운동화 입혀 등원"],"supplies":[]}],"tasks":[],"supplies":[],"notes":[]}`;
 }
 
-async function requestGemini(model, parts){
+async function requestGemini(model, parts, noThink){
   const url=`${API_BASE}/models/${model}:generateContent?key=${state.apiKey}`;
   const gc={ responseMimeType:'application/json' };
-  if(/2\.5/.test(model)) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
+  if(/2\.5/.test(model) && !noThink) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
   const ctrl=new AbortController();
   const to=setTimeout(()=>ctrl.abort(), 30000);                    // 30초 넘으면 중단(무한 대기 방지)
   try{
@@ -670,15 +670,16 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // 일시장애(재시도로 풀림) vs 사용량 소진(재시도 무의미) vs 모델없음(다른 모델로) 판별
 const isOverload=(s,m)=>s===503||s===500||/overload|high demand|try again later|temporarily|unavailable/i.test(m);
 const isQuota=(s,m)=>s===429||/quota|resource_exhausted|rate limit|too many requests/i.test(m);
-const isModelGone=(s,m)=>s===404||/not found|not supported|deprecated|no longer/i.test(m);
+const isModelGone=(s,m)=>s===404||/not found|not supported|deprecated|no longer|not available|update to/i.test(m);
+const isKeyErr=(s,m)=>/api key not valid|api_key_invalid|invalid.*key|permission denied|\b401\b|\b403\b/i.test(s+' '+m);
 function friendlyErr(status,msg){
-  if(/api key not valid|api_key_invalid|invalid.*key|permission|401|403/i.test(status+' '+msg))
+  if(isKeyErr(status,msg))
     return 'API 키가 올바르지 않은 것 같아요. ⚙️ 설정 → Gemini API 키에서 다시 확인해 주세요.';
   if(isQuota(status,msg))
     return '오늘 무료 사용량(AI 요청 수)을 다 쓴 것 같아요. 잠시 후·또는 내일 다시 시도해 주세요. (구글 AI Studio에서 사용량 확인 가능)';
   if(isOverload(status,msg))
     return 'AI 서버가 잠시 붐비고 있어요. 30초쯤 뒤 다시 시도해 주세요.';
-  return 'AI 요청에 실패했어요. 잠시 후 다시 시도해 주세요.\n(' + (msg||('오류 '+status)).slice(0,150) + ')';
+  return 'AI 요청에 실패했어요. 잠시 후 다시 시도해 주세요.';   // 영어 원문은 화면에 안 띄움(콘솔에만)
 }
 
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
@@ -686,28 +687,30 @@ async function callGeminiText(parts){
   let lastStatus=0, lastMsg='';
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
-    for(let attempt=0; attempt<3; attempt++){          // 붐빔이면 같은 모델 재시도
+    let noThink=false;
+    for(let attempt=0; attempt<3; attempt++){
       let res;
-      try{ res=await requestGemini(m,parts); }
+      try{ res=await requestGemini(m,parts,noThink); }
       catch(e){
-        if(e.name==='AbortError'){ lastStatus=0; lastMsg='응답이 너무 느려 중단했어요(시간 초과).';
+        if(e.name==='AbortError'){ lastStatus=0; lastMsg='시간 초과';
           if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
         throw new Error('인터넷 연결이 불안정한 것 같아요. 연결을 확인하고 다시 시도해 주세요.');
       }
       if(res.ok){
         const data=await res.json();
         const text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
-        if(m!==state.model){ state.model=m; localStorage.setItem(LS.MODEL,m); }
-        return text;
+        if(text){ if(m!==state.model){ state.model=m; localStorage.setItem(LS.MODEL,m); } return text; }
+        lastStatus=200; lastMsg='빈 응답';                         // 빈 응답 → 아래에서 재시도
+      } else {
+        const err=await res.json().catch(()=>({}));
+        lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
+        console.warn('Gemini 오류', lastStatus, lastMsg);
+        if(isKeyErr(lastStatus,lastMsg) || isQuota(lastStatus,lastMsg)) throw new Error(friendlyErr(lastStatus,lastMsg));
+        if(lastStatus===400 && /2\.5/.test(m) && !noThink){ noThink=true; continue; }  // 생각모드 문제면 끄고 재시도
+        if(isModelGone(lastStatus,lastMsg)) break;                 // 낡은/없는 모델 → 다음 모델
       }
-      const err=await res.json().catch(()=>({}));
-      lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
-      if(isOverload(lastStatus,lastMsg)){
-        if(attempt<2){ await sleep(1000*(attempt+1)); continue; } // 1s→2s 후 재시도(빠르게)
-        break;                                                    // 계속 붐비면 다음 모델
-      }
-      if(isModelGone(lastStatus,lastMsg)) break;                  // 모델 교체
-      throw new Error(friendlyErr(lastStatus,lastMsg));           // 키 오류 등 즉시 안내
+      if(attempt<2){ await sleep(1000*(attempt+1)); continue; }    // 붐빔·불명 → 재시도(1s→2s)
+      break;                                                       // 재시도 소진 → 다음 모델
     }
   }
   throw new Error(friendlyErr(lastStatus,lastMsg));
