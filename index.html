@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v43 · 오류사유 표시';
+const APP_VERSION='v44 · 모델복귀·짧은타임아웃';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -440,7 +440,7 @@ const LS = {
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
   childName: localStorage.getItem(LS.NAME) || '우리 아이',
-  model: localStorage.getItem(LS.MODEL) || 'gemini-2.0-flash',
+  model: localStorage.getItem(LS.MODEL) || 'gemini-2.5-flash',
   entries: JSON.parse(localStorage.getItem(LS.ENTRIES) || '[]'),
   deleted: JSON.parse(localStorage.getItem(LS.DELETED) || '{}'),  // 삭제 표시 {id:시각} — 가족 동기화 병합용
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
@@ -624,9 +624,9 @@ async function syncNow(manual){
 
 /* ================= Gemini 호출 ================= */
 const API_BASE='https://generativelanguage.googleapis.com/v1beta';
-const MODEL_FALLBACK=['gemini-2.0-flash','gemini-2.5-flash','gemini-flash-latest'];
-// 덜 붐비는 2.0-flash 우선(빠름). 붐빔(503) 시 2.5-flash로도 시도
-if(localStorage.getItem('wooriai_model_reset')!=='4'){ state.model='gemini-2.0-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','4'); }
+const MODEL_FALLBACK=['gemini-2.5-flash','gemini-2.0-flash','gemini-flash-latest'];
+// 세션 내내 잘 되던 2.5-flash 1순위로 복귀
+if(localStorage.getItem('wooriai_model_reset')!=='5'){ state.model='gemini-2.5-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','5'); }
 
 function buildPrompt(){
   const today=new Date().toISOString().slice(0,10);
@@ -702,7 +702,7 @@ async function callGeminiText(parts){
     for(let attempt=0; attempt<3; attempt++){
       if(Date.now()>deadline) throw new Error('AI 응답이 너무 느려요. 인터넷 상태를 확인하고 잠시 후 다시 시도해 주세요.');
       let res;
-      try{ res=await requestGemini(m,parts,noThink, Math.max(8000, Math.min(45000, deadline-Date.now()))); }
+      try{ res=await requestGemini(m,parts,noThink, Math.max(8000, Math.min(20000, deadline-Date.now()))); }  // 한 요청 최대 20초 → 막히면 빨리 다음 모델
       catch(e){
         if(e.name==='AbortError'){ lastStatus=0; lastMsg='시간 초과';
           if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
