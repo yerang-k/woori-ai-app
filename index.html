@@ -417,7 +417,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v33 · AI 속도개선';
+const APP_VERSION='v34 · 사진 축소·시간표시';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -975,11 +975,29 @@ async function shrinkToFit(dataUrl, maxChars=MAXB64){
   }
   return '';  // 도저히 못 줄이면 공유 안 함(로컬 전용)
 }
+// dataURL을 지정 크기로 다시 축소 (AI 전송용 등)
+function resizeDataUrl(dataUrl, maxSide=1024, q=0.68){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1, maxSide/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const out=c.toDataURL('image/jpeg', q);
+      resolve({dataUrl:out, base64:out.split(',')[1]});
+    };
+    img.onerror=()=>reject(new Error('이미지 변환 실패'));
+    img.src=dataUrl;
+  });
+}
 $('imgFile').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{
-    pendingImage=await loadResized(f);   // {dataUrl, base64, mime}
+    pendingImage=await loadResized(f);   // {dataUrl, base64, mime} — 원본(보기용, 1568px)
     pendingImage.shareImage=await shrinkToFit(pendingImage.dataUrl);  // 가족 공유용 축소본
+    try{ pendingImage.aiB64=(await resizeDataUrl(pendingImage.dataUrl,1024,0.68)).base64; }  // AI 전송용(작게→빠르게)
+    catch(_){ pendingImage.aiB64=pendingImage.base64; }
     $('imgPreview').src=pendingImage.dataUrl; $('imgPreview').style.display='block';
   }catch(err){ toast('이미지를 불러오지 못했어요. 다른 사진으로 시도해 주세요.'); }
 });
@@ -990,9 +1008,10 @@ async function doAnalyze(){
   if(!pendingImage && !rawText){ toast('내용을 입력하거나 사진을 선택해 주세요.'); return; }
   const parts=[{text:buildPrompt()}];
   if(rawText) parts.push({text:'\n공지 내용:\n'+rawText});
-  if(pendingImage) parts.push({inline_data:{mime_type:pendingImage.mime, data:pendingImage.base64}});
+  if(pendingImage) parts.push({inline_data:{mime_type:'image/jpeg', data: pendingImage.aiB64||pendingImage.base64}});  // 작게 줄인 사진 전송
 
   $('analyzing').style.display='block'; $('btnAnalyze').disabled=true;
+  const t0=Date.now();
   try{
     const structured=await analyze(parts);
     structured.done=structured.done||{};
@@ -1006,7 +1025,7 @@ async function doAnalyze(){
         shareImage: pendingImage?pendingImage.shareImage:'' },   // 가족 공유용 축소본
       structured                  // 원문(source)과 AI 정리(structured)를 분리 저장
     });
-    saveEntries(); render(); closeModal('inputModal'); toast('정리했어요 ✨');
+    saveEntries(); render(); closeModal('inputModal'); toast(`정리했어요 ✨ (${((Date.now()-t0)/1000).toFixed(1)}초)`);
   }catch(err){
     toast(err.message);
   }finally{
