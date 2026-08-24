@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>우리 아이</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#f2884b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="우리 아이">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" href="/icons/icon-192.png">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}</script>
 <style>
   :root{
     --bg:#faf6f1; --card:#fff; --line:#eee6dc; --text:#2b2a28; --sub:#8a8378;
@@ -400,7 +408,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v30 · 배지 크기 통일';
+const APP_VERSION='v31 · 앱설치(PWA)';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
