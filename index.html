@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v44 · 모델복귀·짧은타임아웃';
+const APP_VERSION='v45 · 느린응답 여유';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -695,14 +695,14 @@ function friendlyErr(status,msg){
 // Gemini 호출(모델 폴백 + 붐빔 재시도) → 응답 텍스트 반환. 공지 정리·놀이 추천이 공유
 async function callGeminiText(parts){
   let lastStatus=0, lastMsg='';
-  const deadline=Date.now()+75000;   // 전체 75초(붐빔 재시도 여유)
+  const deadline=Date.now()+90000;   // 전체 90초(느린 응답도 기다릴 여유)
   const models=[state.model,...MODEL_FALLBACK.filter(m=>m!==state.model)];
   for(const m of models){
     let noThink=false;
     for(let attempt=0; attempt<3; attempt++){
       if(Date.now()>deadline) throw new Error('AI 응답이 너무 느려요. 인터넷 상태를 확인하고 잠시 후 다시 시도해 주세요.');
       let res;
-      try{ res=await requestGemini(m,parts,noThink, Math.max(8000, Math.min(20000, deadline-Date.now()))); }  // 한 요청 최대 20초 → 막히면 빨리 다음 모델
+      try{ res=await requestGemini(m,parts,noThink, Math.max(10000, Math.min(40000, deadline-Date.now()))); }  // 한 요청 최대 40초(느린 응답 기다림)
       catch(e){
         if(e.name==='AbortError'){ lastStatus=0; lastMsg='시간 초과';
           if(attempt<2){ await sleep(500); continue; } break; }   // 타임아웃 → 재시도/다음 모델
