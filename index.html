@@ -430,11 +430,17 @@
 <!-- 이미지 확대 라이트박스 모달 -->
 <div class="modal-bg" id="lightboxModal" style="align-items:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);justify-content:center;touch-action:none">
   <button class="modal-x" id="btnCloseLightbox" style="top:20px;right:20px;background:rgba(255,255,255,.2);color:#fff">✕</button>
-  <img id="lightboxImg" draggable="false" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(0.95);transition:transform .2s ease-out;cursor:zoom-out;-webkit-user-drag:none;user-drag:none;touch-action:none">
+  <img id="lightboxImg" draggable="false" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(1);transition:transform .2s ease-out;cursor:zoom-in;-webkit-user-drag:none;user-drag:none;touch-action:none">
+  <!-- 줌 플로팅 버튼 세트 -->
+  <div id="zoomControls" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:25">
+    <button id="btnZoomOut" style="width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.25);color:#fff;font-size:22px;font-weight:bold;cursor:pointer;backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none">➖</button>
+    <button id="btnZoomReset" style="width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.25);color:#fff;font-size:20px;font-weight:bold;cursor:pointer;backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none">🔄</button>
+    <button id="btnZoomIn" style="width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.25);color:#fff;font-size:22px;font-weight:bold;cursor:pointer;backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none">➕</button>
+  </div>
 </div>
 
 <script>
-const APP_VERSION='v55 (55번째 업데이트) · 핀치 줌 렉 차단 및 멀티터치 제스처 최종 패치';
+const APP_VERSION='v56 (56번째 업데이트) · 더블클릭 스마트 줌 & 물리 줌 버튼 보강 패치';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1164,7 +1170,7 @@ $('btnSettings').onclick=()=>{
   $('setFamilyDesc').textContent = syncConfigured()?('연결됨'+(state.me?' · '+state.me:'')):'엄마·아빠가 함께 보기';
   $('setKeyDesc').textContent = state.apiKey?'연결됨':'AI 정리에 필요';
   $('notifyState').textContent = state.notify?'켜짐':'꺼짐';
-  $('verLine').textContent = APP_VERSION;
+  $('verLine').textContent = 'v56';
   openModal('settingsModal');
 };
 $('setNotify').onclick=()=>{
@@ -1278,81 +1284,129 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
 });
 
-// 이미지 확대 (라이트박스 핀치 줌 & 드래그)
-let scale = 1, lastScale = 1;
-let translateX = 0, translateY = 0, lastTranslateX = 0, lastTranslateY = 0;
-let startTouchX = 0, startTouchY = 0;
-let startDist = 0;
-let isPanning = false;
+// 이미지 확대 (라이트박스 종합 줌 & 드래그)
+let scale = 1;
+let translateX = 0, translateY = 0;
+let isDragging = false;
+let startX = 0, startY = 0;
+let lastTap = 0; // 더블 탭 감지용
 
 const modal = $('lightboxModal');
 const img = $('lightboxImg');
 
-modal.addEventListener('touchstart', e => {
-  if (!modal.classList.contains('open')) return;
-  img.style.transition = 'none'; // 터치 시작 시 즉시 반응하도록 애니메이션 끔
-  if (e.touches.length === 1) {
-    isPanning = true;
-    startTouchX = e.touches[0].clientX - translateX;
-    startTouchY = e.touches[0].clientY - translateY;
-  } else if (e.touches.length === 2) {
-    isPanning = false;
-    startDist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
+function dragStart(clientX, clientY) {
+  isDragging = true;
+  img.style.transition = 'none'; // 드래그 중 지연 애니메이션 제거
+  img.style.cursor = 'grabbing';
+  startX = clientX - translateX;
+  startY = clientY - translateY;
+}
+
+function dragMove(clientX, clientY) {
+  if (!isDragging) return;
+  translateX = clientX - startX;
+  translateY = clientY - startY;
+  updateTransform();
+}
+
+function dragEnd() {
+  if (!isDragging) return;
+  isDragging = false;
+  img.style.cursor = scale > 1 ? 'zoom-out' : 'zoom-in';
+  
+  if (scale <= 1.05) {
+    img.style.transition = 'transform .2s ease-out';
+    resetZoom();
   }
-}, { passive: false });
+}
+
+// 터치 이벤트 (모바일)
+modal.addEventListener('touchstart', e => {
+  if (!modal.classList.contains('open') || e.touches.length !== 1) return;
+  dragStart(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
 
 modal.addEventListener('touchmove', e => {
-  if (!modal.classList.contains('open')) return;
-  if (e.touches.length > 0) e.preventDefault(); // 스크롤 방지
-  if (e.touches.length === 1 && isPanning) {
-    translateX = e.touches[0].clientX - startTouchX;
-    translateY = e.touches[0].clientY - startTouchY;
-    updateTransform();
-  } else if (e.touches.length === 2) {
-    const dist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-    if (!startDist) {
-      startDist = dist;
-    }
-    if (startDist > 0) {
-      scale = Math.min(Math.max(1, lastScale * (dist / startDist)), 4);
-      updateTransform();
-    }
-  }
+  if (!modal.classList.contains('open') || !isDragging || e.touches.length !== 1) return;
+  e.preventDefault(); // 화면 스크롤 잠금
+  dragMove(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: false });
 
-modal.addEventListener('touchend', e => {
-  if (!modal.classList.contains('open')) return;
-  if (e.touches.length === 0) {
-    isPanning = false;
-    lastScale = scale;
-    lastTranslateX = translateX;
-    lastTranslateY = translateY;
-    if (scale <= 1.05) {
-      img.style.transition = 'transform .2s ease-out';
+modal.addEventListener('touchend', dragEnd, { passive: true });
+
+// 마우스 이벤트 (PC/시뮬레이터)
+modal.addEventListener('mousedown', e => {
+  if (!modal.classList.contains('open') || e.button !== 0) return;
+  if (e.target.closest('#zoomControls') || e.target.id === 'btnCloseLightbox') return;
+  dragStart(e.clientX, e.clientY);
+});
+
+window.addEventListener('mousemove', e => {
+  dragMove(e.clientX, e.clientY);
+});
+
+window.addEventListener('mouseup', dragEnd);
+
+// 더블 탭/클릭 스마트 줌 (2.5배 확대 및 토글)
+modal.addEventListener('click', e => {
+  if (e.target.closest('#zoomControls') || e.target.id === 'btnCloseLightbox') return;
+  
+  const now = Date.now();
+  const DOUBLE_PRESS_DELAY = 300;
+  if (now - lastTap < DOUBLE_PRESS_DELAY) {
+    // 더블 클릭/탭 발생
+    img.style.transition = 'transform .2s ease-out';
+    if (scale > 1.05) {
       resetZoom();
+    } else {
+      scale = 2.5;
+      translateX = 0;
+      translateY = 0;
+      updateTransform();
     }
-  } else if (e.touches.length === 1) {
-    isPanning = true;
-    startTouchX = e.touches[0].clientX - translateX;
-    startTouchY = e.touches[0].clientY - translateY;
-    lastScale = scale;
+    lastTap = 0;
+  } else {
+    lastTap = now;
+    // 단일 클릭은 모달 닫기
+    setTimeout(() => {
+      if (lastTap !== 0 && scale <= 1.05 && (e.target === modal || e.target === img)) {
+        closeLightbox();
+      }
+    }, DOUBLE_PRESS_DELAY);
   }
-}, { passive: false });
+});
+
+// 물리 버튼 클릭 바인딩
+$('btnZoomIn').onclick = e => {
+  e.stopPropagation();
+  img.style.transition = 'transform .2s ease-out';
+  scale = Math.min(scale + 0.5, 4);
+  updateTransform();
+};
+
+$('btnZoomOut').onclick = e => {
+  e.stopPropagation();
+  img.style.transition = 'transform .2s ease-out';
+  scale = Math.max(scale - 0.5, 1);
+  if (scale <= 1.05) resetZoom();
+  else updateTransform();
+};
+
+$('btnZoomReset').onclick = e => {
+  e.stopPropagation();
+  img.style.transition = 'transform .2s ease-out';
+  resetZoom();
+};
 
 function updateTransform() {
   img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
 }
 
 function resetZoom() {
-  scale = 1; lastScale = 1;
-  translateX = 0; translateY = 0; lastTranslateX = 0; lastTranslateY = 0;
+  scale = 1;
+  translateX = 0; translateY = 0;
   img.style.transform = 'translate(0, 0) scale(1)';
+  img.style.cursor = 'zoom-in';
 }
 
 document.addEventListener('click', e => {
@@ -1363,15 +1417,10 @@ document.addEventListener('click', e => {
 
 function closeLightbox() {
   closeModal('lightboxModal');
-  setTimeout(resetZoom, 200); // 닫히는 애니메이션(.2s) 동안 줌 상태 유지했다가 끝난 뒤 초기화
+  setTimeout(resetZoom, 200);
 }
 
 $('btnCloseLightbox').onclick = closeLightbox;
-$('lightboxModal').onclick = (e) => {
-  if (e.target === $('lightboxModal') || e.target === img) {
-    if (scale <= 1.05) closeLightbox();
-  }
-};
 
 /* ================= 주말 놀이 추천 (V0.5) ================= */
 function switchTab(tab){
