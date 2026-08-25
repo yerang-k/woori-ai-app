@@ -434,7 +434,7 @@
 </div>
 
 <script>
-const APP_VERSION='v51 (51번째 업데이트) · 원문 사진 확대 기능 추가';
+const APP_VERSION='v52 (52번째 업데이트) · 이미지 핀치 줌 & 드래그 조작 추가';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1278,14 +1278,86 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
 });
 
-// 이미지 확대 (라이트박스)
-document.addEventListener('click',e=>{
-  if(e.target.classList.contains('raw-img')){
-    const src=e.target.src; if(src){ $('lightboxImg').src=src; openModal('lightboxModal'); }
+// 이미지 확대 (라이트박스 핀치 줌 & 드래그)
+let scale = 1, lastScale = 1;
+let startX = 0, startY = 0, translateX = 0, translateY = 0, lastTranslateX = 0, lastTranslateY = 0;
+let touchStartDist = 0;
+let isPanning = false;
+
+const img = $('lightboxImg');
+
+img.addEventListener('touchstart', e => {
+  img.style.transition = 'none'; // 터치 시작 시 즉시 반응하도록 애니메이션 끔
+  if (e.touches.length === 1) {
+    isPanning = true;
+    startX = e.touches[0].clientX - lastTranslateX;
+    startY = e.touches[0].clientY - lastTranslateY;
+  } else if (e.touches.length === 2) {
+    isPanning = false;
+    touchStartDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
   }
 });
-$('btnCloseLightbox').onclick=()=>closeModal('lightboxModal');
-$('lightboxModal').onclick=(e)=>{ if(e.target===$('lightboxModal') || e.target===$('lightboxImg')) closeModal('lightboxModal'); };
+
+img.addEventListener('touchmove', e => {
+  if (e.touches.length > 0) e.preventDefault(); // 스크롤 방지
+  if (isPanning && scale > 1 && e.touches.length === 1) {
+    translateX = e.touches[0].clientX - startX;
+    translateY = e.touches[0].clientY - startY;
+    updateTransform();
+  } else if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    scale = Math.min(Math.max(1, lastScale * (dist / touchStartDist)), 4);
+    updateTransform();
+  }
+});
+
+img.addEventListener('touchend', e => {
+  lastScale = scale;
+  lastTranslateX = translateX;
+  lastTranslateY = translateY;
+  isPanning = false;
+  
+  if (e.touches.length === 0) {
+    if (scale <= 1.05) {
+      img.style.transition = 'transform .2s ease-out';
+      resetZoom();
+    }
+  }
+});
+
+function updateTransform() {
+  img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+}
+
+function resetZoom() {
+  scale = 1; lastScale = 1;
+  translateX = 0; translateY = 0; lastTranslateX = 0; lastTranslateY = 0;
+  img.style.transform = 'translate(0, 0) scale(1)';
+}
+
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('raw-img')) {
+    const src = e.target.src; if (src) { img.src = src; openModal('lightboxModal'); }
+  }
+});
+
+function closeLightbox() {
+  closeModal('lightboxModal');
+  setTimeout(resetZoom, 200); // 닫히는 애니메이션(.2s) 동안 줌 상태 유지했다가 끝난 뒤 초기화
+}
+
+$('btnCloseLightbox').onclick = closeLightbox;
+$('lightboxModal').onclick = (e) => {
+  if (e.target === $('lightboxModal') || e.target === img) {
+    if (scale <= 1.05) closeLightbox();
+  }
+};
 
 /* ================= 주말 놀이 추천 (V0.5) ================= */
 function switchTab(tab){
