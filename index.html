@@ -1284,59 +1284,58 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('open'); });
 });
 
-// 이미지 확대 (라이트박스 종합 줌 & 드래그)
-let scale = 1;
-let translateX = 0, translateY = 0;
-let isDragging = false;
-let startX = 0, startY = 0;
-let lastTap = 0; // 더블 탭 감지용
-
-const modal = $('lightboxModal');
-const img = $('lightboxImg');
+// 이미지 확대 (라이트박스 종합 줌 & 드래그) - 변수 충돌 방지를 위한 유니크 네이밍
+let lightboxScale = 1;
+let lightboxTx = 0, lightboxTy = 0;
+let lightboxDragging = false;
+let lightboxStartX = 0, lightboxStartY = 0;
+let lightboxLastTap = 0; 
 
 function dragStart(clientX, clientY) {
-  isDragging = true;
-  img.style.transition = 'none'; // 드래그 중 지연 애니메이션 제거
-  img.style.cursor = 'grabbing';
-  startX = clientX - translateX;
-  startY = clientY - translateY;
+  const imgEl = $('lightboxImg');
+  lightboxDragging = true;
+  imgEl.style.transition = 'none'; 
+  imgEl.style.cursor = 'grabbing';
+  lightboxStartX = clientX - lightboxTx;
+  lightboxStartY = clientY - lightboxTy;
 }
 
 function dragMove(clientX, clientY) {
-  if (!isDragging) return;
-  translateX = clientX - startX;
-  translateY = clientY - startY;
+  if (!lightboxDragging) return;
+  lightboxTx = clientX - lightboxStartX;
+  lightboxTy = clientY - lightboxStartY;
   updateTransform();
 }
 
 function dragEnd() {
-  if (!isDragging) return;
-  isDragging = false;
-  img.style.cursor = scale > 1 ? 'zoom-out' : 'zoom-in';
+  if (!lightboxDragging) return;
+  lightboxDragging = false;
+  const imgEl = $('lightboxImg');
+  imgEl.style.cursor = lightboxScale > 1 ? 'zoom-out' : 'zoom-in';
   
-  if (scale <= 1.05) {
-    img.style.transition = 'transform .2s ease-out';
+  if (lightboxScale <= 1.05) {
+    imgEl.style.transition = 'transform .2s ease-out';
     resetZoom();
   }
 }
 
 // 터치 이벤트 (모바일)
-modal.addEventListener('touchstart', e => {
-  if (!modal.classList.contains('open') || e.touches.length !== 1) return;
+$('lightboxModal').addEventListener('touchstart', e => {
+  if (!$('lightboxModal').classList.contains('open') || e.touches.length !== 1) return;
   dragStart(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 
-modal.addEventListener('touchmove', e => {
-  if (!modal.classList.contains('open') || !isDragging || e.touches.length !== 1) return;
-  e.preventDefault(); // 화면 스크롤 잠금
+$('lightboxModal').addEventListener('touchmove', e => {
+  if (!$('lightboxModal').classList.contains('open') || !lightboxDragging || e.touches.length !== 1) return;
+  e.preventDefault(); // 스크롤 차단
   dragMove(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: false });
 
-modal.addEventListener('touchend', dragEnd, { passive: true });
+$('lightboxModal').addEventListener('touchend', dragEnd, { passive: true });
 
 // 마우스 이벤트 (PC/시뮬레이터)
-modal.addEventListener('mousedown', e => {
-  if (!modal.classList.contains('open') || e.button !== 0) return;
+$('lightboxModal').addEventListener('mousedown', e => {
+  if (!$('lightboxModal').classList.contains('open') || e.button !== 0) return;
   if (e.target.closest('#zoomControls') || e.target.id === 'btnCloseLightbox') return;
   dragStart(e.clientX, e.clientY);
 });
@@ -1348,28 +1347,27 @@ window.addEventListener('mousemove', e => {
 window.addEventListener('mouseup', dragEnd);
 
 // 더블 탭/클릭 스마트 줌 (2.5배 확대 및 토글)
-modal.addEventListener('click', e => {
+$('lightboxModal').addEventListener('click', e => {
   if (e.target.closest('#zoomControls') || e.target.id === 'btnCloseLightbox') return;
   
   const now = Date.now();
   const DOUBLE_PRESS_DELAY = 300;
-  if (now - lastTap < DOUBLE_PRESS_DELAY) {
-    // 더블 클릭/탭 발생
-    img.style.transition = 'transform .2s ease-out';
-    if (scale > 1.05) {
+  if (now - lightboxLastTap < DOUBLE_PRESS_DELAY) {
+    const imgEl = $('lightboxImg');
+    imgEl.style.transition = 'transform .2s ease-out';
+    if (lightboxScale > 1.05) {
       resetZoom();
     } else {
-      scale = 2.5;
-      translateX = 0;
-      translateY = 0;
+      lightboxScale = 2.5;
+      lightboxTx = 0;
+      lightboxTy = 0;
       updateTransform();
     }
-    lastTap = 0;
+    lightboxLastTap = 0;
   } else {
-    lastTap = now;
-    // 단일 클릭은 모달 닫기
+    lightboxLastTap = now;
     setTimeout(() => {
-      if (lastTap !== 0 && scale <= 1.05 && (e.target === modal || e.target === img)) {
+      if (lightboxLastTap !== 0 && lightboxScale <= 1.05 && (e.target === $('lightboxModal') || e.target === $('lightboxImg'))) {
         closeLightbox();
       }
     }, DOUBLE_PRESS_DELAY);
@@ -1379,39 +1377,39 @@ modal.addEventListener('click', e => {
 // 물리 버튼 클릭 바인딩
 $('btnZoomIn').onclick = e => {
   e.stopPropagation();
-  img.style.transition = 'transform .2s ease-out';
-  scale = Math.min(scale + 0.5, 4);
+  $('lightboxImg').style.transition = 'transform .2s ease-out';
+  lightboxScale = Math.min(lightboxScale + 0.5, 4);
   updateTransform();
 };
 
 $('btnZoomOut').onclick = e => {
   e.stopPropagation();
-  img.style.transition = 'transform .2s ease-out';
-  scale = Math.max(scale - 0.5, 1);
-  if (scale <= 1.05) resetZoom();
+  $('lightboxImg').style.transition = 'transform .2s ease-out';
+  lightboxScale = Math.max(lightboxScale - 0.5, 1);
+  if (lightboxScale <= 1.05) resetZoom();
   else updateTransform();
 };
 
 $('btnZoomReset').onclick = e => {
   e.stopPropagation();
-  img.style.transition = 'transform .2s ease-out';
+  $('lightboxImg').style.transition = 'transform .2s ease-out';
   resetZoom();
 };
 
 function updateTransform() {
-  img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+  $('lightboxImg').style.transform = `translate(${lightboxTx}px, ${lightboxTy}px) scale(${lightboxScale})`;
 }
 
 function resetZoom() {
-  scale = 1;
-  translateX = 0; translateY = 0;
-  img.style.transform = 'translate(0, 0) scale(1)';
-  img.style.cursor = 'zoom-in';
+  lightboxScale = 1;
+  lightboxTx = 0; lightboxTy = 0;
+  $('lightboxImg').style.transform = 'translate(0, 0) scale(1)';
+  $('lightboxImg').style.cursor = 'zoom-in';
 }
 
 document.addEventListener('click', e => {
   if (e.target.classList.contains('raw-img')) {
-    const src = e.target.src; if (src) { img.src = src; openModal('lightboxModal'); }
+    const src = e.target.src; if (src) { $('lightboxImg').src = src; openModal('lightboxModal'); }
   }
 });
 
