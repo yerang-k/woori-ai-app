@@ -427,7 +427,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v49 (49번째 업데이트) · ntfy 폰 알림 가이드 & 테스트 추가';
+const APP_VERSION='v50 (50번째 업데이트) · 알림 테스트 헤더 유니코드 예외 수정';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1229,8 +1229,12 @@ $('btnNtfyTest').onclick=async()=>{
   try{
     const res = await fetch('https://ntfy.sh/'+_ntfyTopic, {
       method:'POST',
-      body: '우리 아이 앱 알림 테스트입니다! 알림이 잘 오나요? 🔔',
-      headers: { 'Title': '우리 아이 🔔', 'Tags': 'bell', 'Priority': 'default' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '우리 아이 앱 알림 테스트입니다! 알림이 잘 오나요? 🔔',
+        title: '우리 아이 🔔',
+        tags: ['bell']
+      })
     });
     if(res.ok) {
       toast('테스트 알림을 전송했습니다! 🔔');
