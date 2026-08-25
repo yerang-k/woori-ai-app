@@ -430,11 +430,11 @@
 <!-- 이미지 확대 라이트박스 모달 -->
 <div class="modal-bg" id="lightboxModal" style="align-items:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);justify-content:center">
   <button class="modal-x" id="btnCloseLightbox" style="top:20px;right:20px;background:rgba(255,255,255,.2);color:#fff">✕</button>
-  <img id="lightboxImg" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(0.95);transition:transform .2s ease-out;cursor:zoom-out">
+  <img id="lightboxImg" draggable="false" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(0.95);transition:transform .2s ease-out;cursor:zoom-out;-webkit-user-drag:none;user-drag:none">
 </div>
 
 <script>
-const APP_VERSION='v52 (52번째 업데이트) · 이미지 핀치 줌 & 드래그 조작 추가';
+const APP_VERSION='v53 (53번째 업데이트) · 모바일 터치 감도 및 드래그 튕김 방지 패치';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1299,7 +1299,7 @@ img.addEventListener('touchstart', e => {
       e.touches[0].clientY - e.touches[1].clientY
     );
   }
-});
+}, { passive: false });
 
 img.addEventListener('touchmove', e => {
   if (e.touches.length > 0) e.preventDefault(); // 스크롤 방지
@@ -1315,7 +1315,7 @@ img.addEventListener('touchmove', e => {
     scale = Math.min(Math.max(1, lastScale * (dist / touchStartDist)), 4);
     updateTransform();
   }
-});
+}, { passive: false });
 
 img.addEventListener('touchend', e => {
   lastScale = scale;
