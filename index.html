@@ -434,7 +434,7 @@
 </div>
 
 <script>
-const APP_VERSION='v53 (53번째 업데이트) · 모바일 터치 감도 및 드래그 튕김 방지 패치';
+const APP_VERSION='v54 (54번째 업데이트) · 모달 전체 영역 핀치 줌 & 드래그 연동 패치';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1284,9 +1284,11 @@ let startX = 0, startY = 0, translateX = 0, translateY = 0, lastTranslateX = 0, 
 let touchStartDist = 0;
 let isPanning = false;
 
+const modal = $('lightboxModal');
 const img = $('lightboxImg');
 
-img.addEventListener('touchstart', e => {
+modal.addEventListener('touchstart', e => {
+  if (!modal.classList.contains('open')) return;
   img.style.transition = 'none'; // 터치 시작 시 즉시 반응하도록 애니메이션 끔
   if (e.touches.length === 1) {
     isPanning = true;
@@ -1301,13 +1303,14 @@ img.addEventListener('touchstart', e => {
   }
 }, { passive: false });
 
-img.addEventListener('touchmove', e => {
+modal.addEventListener('touchmove', e => {
+  if (!modal.classList.contains('open')) return;
   if (e.touches.length > 0) e.preventDefault(); // 스크롤 방지
   if (isPanning && scale > 1 && e.touches.length === 1) {
     translateX = e.touches[0].clientX - startX;
     translateY = e.touches[0].clientY - startY;
     updateTransform();
-  } else if (e.touches.length === 2) {
+  } else if (e.touches.length === 2 && touchStartDist > 0) {
     const dist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
@@ -1317,7 +1320,8 @@ img.addEventListener('touchmove', e => {
   }
 }, { passive: false });
 
-img.addEventListener('touchend', e => {
+modal.addEventListener('touchend', e => {
+  if (!modal.classList.contains('open')) return;
   lastScale = scale;
   lastTranslateX = translateX;
   lastTranslateY = translateY;
@@ -1329,7 +1333,7 @@ img.addEventListener('touchend', e => {
       resetZoom();
     }
   }
-});
+}, { passive: false });
 
 function updateTransform() {
   img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
