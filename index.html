@@ -428,13 +428,13 @@
 <div class="toast" id="toast"></div>
 
 <!-- 이미지 확대 라이트박스 모달 -->
-<div class="modal-bg" id="lightboxModal" style="align-items:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);justify-content:center">
+<div class="modal-bg" id="lightboxModal" style="align-items:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);justify-content:center;touch-action:none">
   <button class="modal-x" id="btnCloseLightbox" style="top:20px;right:20px;background:rgba(255,255,255,.2);color:#fff">✕</button>
-  <img id="lightboxImg" draggable="false" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(0.95);transition:transform .2s ease-out;cursor:zoom-out;-webkit-user-drag:none;user-drag:none">
+  <img id="lightboxImg" draggable="false" style="max-width:96%;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:scale(0.95);transition:transform .2s ease-out;cursor:zoom-out;-webkit-user-drag:none;user-drag:none;touch-action:none">
 </div>
 
 <script>
-const APP_VERSION='v54 (54번째 업데이트) · 모달 전체 영역 핀치 줌 & 드래그 연동 패치';
+const APP_VERSION='v55 (55번째 업데이트) · 핀치 줌 렉 차단 및 멀티터치 제스처 최종 패치';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1280,8 +1280,9 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
 
 // 이미지 확대 (라이트박스 핀치 줌 & 드래그)
 let scale = 1, lastScale = 1;
-let startX = 0, startY = 0, translateX = 0, translateY = 0, lastTranslateX = 0, lastTranslateY = 0;
-let touchStartDist = 0;
+let translateX = 0, translateY = 0, lastTranslateX = 0, lastTranslateY = 0;
+let startTouchX = 0, startTouchY = 0;
+let startDist = 0;
 let isPanning = false;
 
 const modal = $('lightboxModal');
@@ -1292,11 +1293,11 @@ modal.addEventListener('touchstart', e => {
   img.style.transition = 'none'; // 터치 시작 시 즉시 반응하도록 애니메이션 끔
   if (e.touches.length === 1) {
     isPanning = true;
-    startX = e.touches[0].clientX - lastTranslateX;
-    startY = e.touches[0].clientY - lastTranslateY;
+    startTouchX = e.touches[0].clientX - translateX;
+    startTouchY = e.touches[0].clientY - translateY;
   } else if (e.touches.length === 2) {
     isPanning = false;
-    touchStartDist = Math.hypot(
+    startDist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
@@ -1306,32 +1307,41 @@ modal.addEventListener('touchstart', e => {
 modal.addEventListener('touchmove', e => {
   if (!modal.classList.contains('open')) return;
   if (e.touches.length > 0) e.preventDefault(); // 스크롤 방지
-  if (isPanning && scale > 1 && e.touches.length === 1) {
-    translateX = e.touches[0].clientX - startX;
-    translateY = e.touches[0].clientY - startY;
+  if (e.touches.length === 1 && isPanning) {
+    translateX = e.touches[0].clientX - startTouchX;
+    translateY = e.touches[0].clientY - startTouchY;
     updateTransform();
-  } else if (e.touches.length === 2 && touchStartDist > 0) {
+  } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
-    scale = Math.min(Math.max(1, lastScale * (dist / touchStartDist)), 4);
-    updateTransform();
+    if (!startDist) {
+      startDist = dist;
+    }
+    if (startDist > 0) {
+      scale = Math.min(Math.max(1, lastScale * (dist / startDist)), 4);
+      updateTransform();
+    }
   }
 }, { passive: false });
 
 modal.addEventListener('touchend', e => {
   if (!modal.classList.contains('open')) return;
-  lastScale = scale;
-  lastTranslateX = translateX;
-  lastTranslateY = translateY;
-  isPanning = false;
-  
   if (e.touches.length === 0) {
+    isPanning = false;
+    lastScale = scale;
+    lastTranslateX = translateX;
+    lastTranslateY = translateY;
     if (scale <= 1.05) {
       img.style.transition = 'transform .2s ease-out';
       resetZoom();
     }
+  } else if (e.touches.length === 1) {
+    isPanning = true;
+    startTouchX = e.touches[0].clientX - translateX;
+    startTouchY = e.touches[0].clientY - translateY;
+    lastScale = scale;
   }
 }, { passive: false });
 
