@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v47 (47번째 업데이트) · Gemini 3.7 업그레이드';
+const APP_VERSION='v48 (48번째 업데이트) · 화면 켤 때 자동 동기화';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1519,7 +1519,12 @@ function stopAndLog(){
 }
 document.querySelectorAll('.settimer').forEach(b=>b.onclick=()=>startTimer(+b.dataset.min));
 $('stopTimer').onclick=stopAndLog;
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden && getTimer()) tickTimer(); });
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){
+    if(getTimer()) tickTimer();
+    if(syncConfigured()) syncNow(false);
+  }
+});
 
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
