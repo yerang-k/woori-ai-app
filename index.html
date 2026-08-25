@@ -424,7 +424,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v46 · 일정 개별삭제';
+const APP_VERSION='v47 (47번째 업데이트) · Gemini 3.7 업그레이드';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -440,7 +440,7 @@ const LS = {
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
   childName: localStorage.getItem(LS.NAME) || '우리 아이',
-  model: localStorage.getItem(LS.MODEL) || 'gemini-2.5-flash',
+  model: localStorage.getItem(LS.MODEL) || 'gemini-3.7-flash',
   entries: JSON.parse(localStorage.getItem(LS.ENTRIES) || '[]'),
   deleted: JSON.parse(localStorage.getItem(LS.DELETED) || '{}'),  // 삭제 표시 {id:시각} — 가족 동기화 병합용
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
@@ -624,9 +624,9 @@ async function syncNow(manual){
 
 /* ================= Gemini 호출 ================= */
 const API_BASE='https://generativelanguage.googleapis.com/v1beta';
-const MODEL_FALLBACK=['gemini-2.5-flash','gemini-2.0-flash','gemini-flash-latest'];
-// 세션 내내 잘 되던 2.5-flash 1순위로 복귀
-if(localStorage.getItem('wooriai_model_reset')!=='5'){ state.model='gemini-2.5-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','5'); }
+const MODEL_FALLBACK=['gemini-3.6-flash','gemini-2.5-flash','gemini-2.0-flash','gemini-flash-latest'];
+// 세션 내내 잘 되던 3.7-flash 1순위로 복귀
+if(localStorage.getItem('wooriai_model_reset')!=='6'){ state.model='gemini-3.7-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','6'); }
 
 function buildPrompt(){
   const today=new Date().toISOString().slice(0,10);
@@ -664,7 +664,7 @@ function buildPrompt(){
 async function requestGemini(model, parts, noThink, timeoutMs){
   const url=`${API_BASE}/models/${model}:generateContent?key=${state.apiKey}`;
   const gc={ responseMimeType:'application/json' };
-  if(/2\.5/.test(model) && !noThink) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5는 '생각' 끄기 → 속도 ↑
+  if(/2\.5|3\.[67]/.test(model) && !noThink) gc.thinkingConfig={ thinkingBudget:0 };   // 2.5/3.6/3.7은 '생각' 끄기 → 속도 ↑
   const ctrl=new AbortController();
   const to=setTimeout(()=>ctrl.abort(), timeoutMs||45000);         // 넘으면 중단(무한 대기 방지)
   try{
@@ -718,7 +718,7 @@ async function callGeminiText(parts){
         lastStatus=res.status; lastMsg=err?.error?.message||('HTTP '+res.status);
         console.warn('Gemini 오류', lastStatus, lastMsg);
         if(isKeyErr(lastStatus,lastMsg) || isQuota(lastStatus,lastMsg)) throw new Error(friendlyErr(lastStatus,lastMsg));
-        if(lastStatus===400 && /2\.5/.test(m) && !noThink){ noThink=true; continue; }  // 생각모드 문제면 끄고 재시도
+        if(lastStatus===400 && /2\.5|3\.[67]/.test(m) && !noThink){ noThink=true; continue; }  // 생각모드 문제면 끄고 재시도
         if(isModelGone(lastStatus,lastMsg)) break;                 // 낡은/없는 모델 → 다음 모델
       }
       if(attempt<2){ await sleep(1500*(attempt+1)); continue; }    // 붐빔·불명 → 재시도(1.5s→3s)
@@ -773,7 +773,8 @@ function hlDates(s){ return s.replace(DATE_RE,'<span class="hl">$1</span>'); }
 const HAS_DATE=/\d{1,2}\s?월\s?\d{1,2}\s?일|[월화수목금토일]요일|\d{1,2}:\d{2}|(오전|오후)\s?\d{1,2}\s?시|다음\s?주|이번\s?주|모레|내일|오늘/;
 
 function applyAvatar(){
-  $('childName').textContent=state.childName;
+  const ver = APP_VERSION.split(' · ')[0];
+  $('childName').innerHTML = esc(state.childName) + ` <span style="font-size:11px;color:var(--sub);font-weight:normal;margin-left:5px;vertical-align:middle">${ver}</span>`;
   $('babyAvatar').innerHTML=state.photo?`<img src="${state.photo}" alt="">`:'👦';
 }
 function render(){
