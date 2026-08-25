@@ -409,12 +409,15 @@
     <button class="btn ghost" id="btnInvite">아빠에게 초대코드 공유</button>
 
     <div class="mini-h" style="margin-top:14px">📣 폰 알림 (앱 꺼져 있어도)</div>
-    <p class="hint">무료 <b>ntfy</b> 앱을 깔고 아래 채널을 구독하면, 가족이 새 공지를 올릴 때 폰 알림이 와요. (개인정보 없이 "새 공지 등록됨"만 알려줘요)</p>
+    <p class="hint">무료 <b>ntfy</b> 앱을 깔고 아래 채널을 구독해 주세요. 가족이 새 공지를 등록하면 폰 알림이 즉시 옵니다. (ntfy 앱 설치 -> 우측 하단 + 버튼 -> 채널명 입력)</p>
     <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
       <input type="text" id="ntfyTopic" readonly placeholder="가족 연결 후 표시됩니다" style="flex:1">
       <button class="btn ghost" id="btnNtfyCopy" style="margin:0;width:auto;padding:0 12px">복사</button>
     </div>
-    <button class="btn ghost" id="btnNtfyOpen" style="margin-top:8px">ntfy에서 이 채널 열기</button>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn ghost" id="btnNtfyOpen" style="margin:0;flex:1">ntfy에서 열기</button>
+      <button class="btn primary" id="btnNtfyTest" style="margin:0;flex:1;background:var(--ok)">알림 테스트 🔔</button>
+    </div>
 
     <button class="btn ghost" id="btnCancelFamily">닫기</button>
     <p class="hint" style="margin-top:12px">아직 가족 시트가 없나요? 처음 한 번만 구글시트를 만들어 연결하면 됩니다 — 설정 방법은 대화로 안내해 드려요.</p>
@@ -424,7 +427,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v48 (48번째 업데이트) · 화면 켤 때 자동 동기화';
+const APP_VERSION='v49 (49번째 업데이트) · ntfy 폰 알림 가이드 & 테스트 추가';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1221,6 +1224,23 @@ $('btnNtfyCopy').onclick=async()=>{ if(!_ntfyTopic){ toast('먼저 가족을 연
   try{ await navigator.clipboard.writeText(_ntfyTopic); toast('채널 이름을 복사했어요'); }catch(e){ toast(_ntfyTopic); } };
 $('btnNtfyOpen').onclick=()=>{ if(!_ntfyTopic){ toast('먼저 가족을 연결해 주세요.'); return; }
   window.open('https://ntfy.sh/'+_ntfyTopic, '_blank', 'noopener'); };
+$('btnNtfyTest').onclick=async()=>{
+  if(!_ntfyTopic){ toast('먼저 가족을 연결해 주세요.'); return; }
+  try{
+    const res = await fetch('https://ntfy.sh/'+_ntfyTopic, {
+      method:'POST',
+      body: '우리 아이 앱 알림 테스트입니다! 알림이 잘 오나요? 🔔',
+      headers: { 'Title': '우리 아이 🔔', 'Tags': 'bell', 'Priority': 'default' }
+    });
+    if(res.ok) {
+      toast('테스트 알림을 전송했습니다! 🔔');
+    } else {
+      throw new Error('서버 응답 오류: ' + res.status);
+    }
+  }catch(e){
+    toast('알림 전송 실패: ' + e.message);
+  }
+};
 document.querySelectorAll('.me-opt').forEach(b=>b.onclick=()=>{
   state.me=b.dataset.me; localStorage.setItem(LS.ME,state.me); markMe();
 });
