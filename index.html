@@ -440,7 +440,7 @@
 </div>
 
 <script>
-const APP_VERSION='v57 · AI 모델 3.6-flash로 변경';
+const APP_VERSION='v58 · 버전표시 통일';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1170,7 +1170,7 @@ $('btnSettings').onclick=()=>{
   $('setFamilyDesc').textContent = syncConfigured()?('연결됨'+(state.me?' · '+state.me:'')):'엄마·아빠가 함께 보기';
   $('setKeyDesc').textContent = state.apiKey?'연결됨':'AI 정리에 필요';
   $('notifyState').textContent = state.notify?'켜짐':'꺼짐';
-  $('verLine').textContent = 'v56';
+  $('verLine').textContent = APP_VERSION;
   openModal('settingsModal');
 };
 $('setNotify').onclick=()=>{
