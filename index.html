@@ -250,7 +250,10 @@
     <div class="play-panel">
       <div class="mini-h">아이 관심사</div>
       <div id="interestChips" class="chips edit"></div>
-      <input type="text" id="interestAdd" placeholder="관심사 추가하고 Enter (예: 공룡)" style="margin-top:8px">
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="interestAdd" placeholder="관심사 입력 (예: 공룡)">
+        <button class="btn primary" id="btnAddInterest" style="margin:0;width:auto;flex:0 0 auto;padding:0 18px">추가</button>
+      </div>
       <div class="row" style="margin-top:8px;gap:8px">
         <select id="playPlace"><option value="실내·실외 어디든">실내·실외 어디든</option><option value="실내">실내</option><option value="실외">실외</option></select>
         <select id="playTime"><option>약 15분</option><option selected>약 30분</option><option>1시간 이상</option></select>
@@ -440,7 +443,7 @@
 </div>
 
 <script>
-const APP_VERSION='v60 · 영상기록 막대 색 표시 수정';
+const APP_VERSION='v61 · 관심사 추가 버튼 추가';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1458,12 +1461,17 @@ function renderInterests(){
     state.interests.splice(+x.dataset.ri,1); saveInterests(); renderInterests();
   });
 }
+function addInterest(){
+  const el=$('interestAdd');
+  const v=el.value.trim(); if(!v) return;
+  if(!state.interests.includes(v)) state.interests.push(v);
+  saveInterests(); el.value=''; renderInterests();
+}
 $('interestAdd').addEventListener('keydown',e=>{
   if(e.key!=='Enter') return; e.preventDefault();
-  const v=e.target.value.trim(); if(!v) return;
-  if(!state.interests.includes(v)) state.interests.push(v);
-  saveInterests(); e.target.value=''; renderInterests();
+  addInterest();
 });
+$('btnAddInterest').addEventListener('click',addInterest);
 async function suggestPlays(){
   if(!state.apiKey){ toast('먼저 ⚙️ 설정 → API 키를 등록해 주세요.'); return; }
   if(!state.interests.length){ toast('아이 관심사를 하나 이상 추가해 주세요.'); return; }
