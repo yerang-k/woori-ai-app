@@ -70,7 +70,7 @@
   .daybar{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}
   .daybar .lbl{width:60px;color:var(--sub);flex:0 0 auto}
   .daybar .track{flex:1;background:var(--bg);border-radius:6px;height:18px;overflow:hidden;opacity:.55}
-  .daybar .fill{height:100%;background:var(--accent);border-radius:6px;min-width:2px}
+  .daybar .fill{display:block;height:100%;background:var(--accent);border-radius:6px;min-width:2px}
   .daybar .fill.over{background:#e8875a}
   .daybar .val{width:70px;text-align:right;flex:0 0 auto;font-weight:600;white-space:nowrap}
   .bookmark{background:none;border:none;font-size:22px;cursor:pointer;color:#e0a92e;padding:2px 4px;align-self:flex-start}
@@ -440,7 +440,7 @@
 </div>
 
 <script>
-const APP_VERSION='v59 · 영상기록 시간칸·막대 정리';
+const APP_VERSION='v60 · 영상기록 막대 색 표시 수정';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
