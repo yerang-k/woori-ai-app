@@ -440,7 +440,7 @@
 </div>
 
 <script>
-const APP_VERSION='v56 (56번째 업데이트) · 더블클릭 스마트 줌 & 물리 줌 버튼 보강 패치';
+const APP_VERSION='v57 · AI 모델 3.6-flash로 변경';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -456,7 +456,7 @@ const LS = {
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
   childName: localStorage.getItem(LS.NAME) || '우리 아이',
-  model: localStorage.getItem(LS.MODEL) || 'gemini-3.7-flash',
+  model: localStorage.getItem(LS.MODEL) || 'gemini-3.6-flash',
   entries: JSON.parse(localStorage.getItem(LS.ENTRIES) || '[]'),
   deleted: JSON.parse(localStorage.getItem(LS.DELETED) || '{}'),  // 삭제 표시 {id:시각} — 가족 동기화 병합용
   syncUrl: localStorage.getItem(LS.SYNCURL) || '',
@@ -640,9 +640,9 @@ async function syncNow(manual){
 
 /* ================= Gemini 호출 ================= */
 const API_BASE='https://generativelanguage.googleapis.com/v1beta';
-const MODEL_FALLBACK=['gemini-3.6-flash','gemini-2.5-flash','gemini-2.0-flash','gemini-flash-latest'];
-// 세션 내내 잘 되던 3.7-flash 1순위로 복귀
-if(localStorage.getItem('wooriai_model_reset')!=='6'){ state.model='gemini-3.7-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','6'); }
+const MODEL_FALLBACK=['gemini-3.6-flash','gemini-flash-latest','gemini-2.5-flash','gemini-2.0-flash'];
+// 최신 3.6-flash 1순위(안 먹으면 최신·2.5로 자동 폴백)
+if(localStorage.getItem('wooriai_model_reset')!=='7'){ state.model='gemini-3.6-flash'; localStorage.setItem(LS.MODEL,state.model); localStorage.setItem('wooriai_model_reset','7'); }
 
 function buildPrompt(){
   const today=new Date().toISOString().slice(0,10);
