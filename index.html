@@ -202,6 +202,7 @@
     <button class="tab on" data-tab="board">📋 공지</button>
     <button class="tab" data-tab="play">🎮 놀이</button>
     <button class="tab" data-tab="screen">📺 영상</button>
+    <button class="tab" data-tab="meal">🍚 식사</button>
   </div>
   <div id="boardView"><div id="board"></div></div>
   <div id="screenView" style="display:none">
@@ -310,6 +311,22 @@
       </div>
     </div>
    </div>
+  </div>
+  <div id="mealView" style="display:none">
+    <div class="play-panel">
+      <div class="mini-h">🍚 오늘 먹은 것 기록</div>
+      <div class="modes" id="mealTypeModes">
+        <button class="mode on" data-mtype="아침">🍚 아침</button>
+        <button class="mode" data-mtype="점심">🍱 점심</button>
+        <button class="mode" data-mtype="저녁">🍽 저녁</button>
+        <button class="mode" data-mtype="간식">🍪 간식</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="mealText" placeholder="무엇을 먹었나요? (예: 밥, 계란찜, 시금치나물)">
+        <button class="btn primary" id="btnAddMeal" style="margin:0;width:auto;flex:0 0 auto;padding:0 18px">기록</button>
+      </div>
+    </div>
+    <div id="mealLogList"></div>
   </div>
 </main>
 
@@ -443,7 +460,7 @@
 </div>
 
 <script>
-const APP_VERSION='v61 · 관심사 추가 버튼 추가';
+const APP_VERSION='v62 · 식사·간식 기록 탭 추가';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -454,7 +471,8 @@ const LS = {
   GOAL:'wooriai_goal', TAB:'wooriai_tab', SUB:'wooriai_sub', PMODE:'wooriai_pmode',
   PLACESDEL:'wooriai_places_deleted', SCREEN:'wooriai_screen', TIMER:'wooriai_timer',
   NOTIFY:'wooriai_notify', SEEN:'wooriai_seen', SEENINIT:'wooriai_seen_init',
-  SAVEDDEL:'wooriai_saved_plays_deleted', SCREENSESS:'wooriai_screen_sessions', SCREENDEL:'wooriai_screen_deleted'
+  SAVEDDEL:'wooriai_saved_plays_deleted', SCREENSESS:'wooriai_screen_sessions', SCREENDEL:'wooriai_screen_deleted',
+  MEALS:'wooriai_meals', MEALSDEL:'wooriai_meals_deleted'
 };
 const state = {
   apiKey: localStorage.getItem(LS.KEY) || '',
@@ -477,6 +495,8 @@ const state = {
   savedDeleted: JSON.parse(localStorage.getItem(LS.SAVEDDEL) || '{}'),   // 저장 놀이 삭제표시(가족 공유)
   screenSessions: JSON.parse(localStorage.getItem(LS.SCREENSESS) || 'null'),  // 영상 기록(세션 단위)
   screenDeleted: JSON.parse(localStorage.getItem(LS.SCREENDEL) || '{}'),
+  mealLogs: JSON.parse(localStorage.getItem(LS.MEALS) || '[]'),        // 식사·간식 기록
+  mealDeleted: JSON.parse(localStorage.getItem(LS.MEALSDEL) || '{}'),
   notify: localStorage.getItem(LS.NOTIFY)!=='0',   // 새 공지 알림(기본 켜짐)
 };
 // 구버전 영상기록 {날짜:분} → 세션 목록으로 이관
@@ -489,6 +509,8 @@ function savePlaysLocal(){ localStorage.setItem(LS.SAVED, JSON.stringify(state.s
   localStorage.setItem(LS.SAVEDDEL, JSON.stringify(state.savedDeleted)); scheduleSync(); }
 function saveScreenLocal(){ localStorage.setItem(LS.SCREENSESS, JSON.stringify(state.screenSessions));
   localStorage.setItem(LS.SCREENDEL, JSON.stringify(state.screenDeleted)); scheduleSync(); }
+function saveMealsLocal(){ localStorage.setItem(LS.MEALS, JSON.stringify(state.mealLogs));
+  localStorage.setItem(LS.MEALSDEL, JSON.stringify(state.mealDeleted)); scheduleSync(); }
 function savePlaces(){ localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
   localStorage.setItem(LS.PLACESDEL, JSON.stringify(state.placesDeleted)); scheduleSync(); }
 // 저장 + (가족 연결돼 있으면) 동기화 예약
@@ -562,8 +584,10 @@ function mergeStates(a, b){
   const pm=mergeById(a.places,a.placesDeleted,b.places,b.placesDeleted);
   const plm=mergeById(a.plays,a.playsDeleted,b.plays,b.playsDeleted);          // 저장 놀이
   const scm=mergeById(a.screen,a.screenDeleted,b.screen,b.screenDeleted);      // 영상 기록(세션)
+  const mlm=mergeById(a.meals,a.mealsDeleted,b.meals,b.mealsDeleted);          // 식사·간식 기록
   return {entries, deleted:em.deleted, places:pm.items, placesDeleted:pm.deleted,
-    plays:plm.items, playsDeleted:plm.deleted, screen:scm.items, screenDeleted:scm.deleted};
+    plays:plm.items, playsDeleted:plm.deleted, screen:scm.items, screenDeleted:scm.deleted,
+    meals:mlm.items, mealsDeleted:mlm.deleted};
 }
 // 공지 한 줄 요약(알림용)
 function entrySummary(en){ const s=en.structured||{};
@@ -596,6 +620,7 @@ async function syncNow(manual){
       places:state.savedPlaces, placesDeleted:state.placesDeleted,       // 나들이 장소 공유
       plays:state.saved, playsDeleted:state.savedDeleted,                // 저장 놀이 공유
       screen:state.screenSessions, screenDeleted:state.screenDeleted,    // 영상 기록 공유
+      meals:state.mealLogs, mealsDeleted:state.mealDeleted,              // 식사·간식 기록 공유
       meta:{ childName:state.childName, photo:state.photo, at:state.metaAt }   // 이름·사진 공유
     } };
     const res=await fetch(state.syncUrl, {
@@ -606,12 +631,14 @@ async function syncNow(manual){
     if(!data.ok) throw new Error(data.error==='key'?'가족 키가 일치하지 않아요.':'동기화 실패: '+(data.error||''));
     const merged=mergeStates(
       {entries:state.entries, deleted:state.deleted, places:state.savedPlaces, placesDeleted:state.placesDeleted,
-       plays:state.saved, playsDeleted:state.savedDeleted, screen:state.screenSessions, screenDeleted:state.screenDeleted},
+       plays:state.saved, playsDeleted:state.savedDeleted, screen:state.screenSessions, screenDeleted:state.screenDeleted,
+       meals:state.mealLogs, mealsDeleted:state.mealDeleted},
       data.state||{});
     state.entries=merged.entries; state.deleted=merged.deleted;
     state.savedPlaces=merged.places; state.placesDeleted=merged.placesDeleted;
     state.saved=merged.plays; state.savedDeleted=merged.playsDeleted;
     state.screenSessions=merged.screen; state.screenDeleted=merged.screenDeleted;
+    state.mealLogs=merged.meals; state.mealDeleted=merged.mealsDeleted;
     localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
     localStorage.setItem(LS.DELETED, JSON.stringify(state.deleted));
     localStorage.setItem(LS.SAVEDPLACES, JSON.stringify(state.savedPlaces));
@@ -620,9 +647,11 @@ async function syncNow(manual){
     localStorage.setItem(LS.SAVEDDEL, JSON.stringify(state.savedDeleted));
     localStorage.setItem(LS.SCREENSESS, JSON.stringify(state.screenSessions));
     localStorage.setItem(LS.SCREENDEL, JSON.stringify(state.screenDeleted));
+    localStorage.setItem(LS.MEALS, JSON.stringify(state.mealLogs));
+    localStorage.setItem(LS.MEALSDEL, JSON.stringify(state.mealDeleted));
     ensureShareImages();   // 수신한 사진 공지에도 공유용 축소본 채움(재공유 대비)
     notifyNewEntries();    // 가족이 새로 등록한 공지 알림
-    if(typeof renderSavedPlaces==='function'){ renderSavedPlaces(); renderSavedPlays(); renderScreen(); }
+    if(typeof renderSavedPlaces==='function'){ renderSavedPlaces(); renderSavedPlays(); renderScreen(); renderMeals(); }
     // 이름·사진: 상대가 더 최근에 바꿨으면 반영
     const rmeta=data.state&&data.state.meta;
     if(rmeta && (rmeta.at||0) > (state.metaAt||0)){
@@ -1429,11 +1458,13 @@ function switchTab(tab){
   $('boardView').style.display = tab==='board'?'':'none';
   $('playView').style.display  = tab==='play'?'':'none';
   $('screenView').style.display= tab==='screen'?'':'none';
+  $('mealView').style.display  = tab==='meal'?'':'none';
   $('fab').style.display = tab==='board'?'':'none';
   toggleFab(false);
   localStorage.setItem(LS.TAB, tab);   // 마지막 탭 기억(앱 전환 후 복원)
   if(tab==='play'){ renderInterests(); renderSavedPlays(); $('playGoal').value=state.goal; $('regionInput').value=state.region; renderSavedPlaces(); }
   if(tab==='screen'){ renderScreen(); resumeTimer(); }
+  if(tab==='meal'){ renderMeals(); }
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 function switchSub(sub){
@@ -1445,14 +1476,14 @@ function switchSub(sub){
 }
 document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>switchSub(b.dataset.sub));
 function switchMode(mode){
-  document.querySelectorAll('.mode').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
+  document.querySelectorAll('#placeSub .mode').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
   $('placeMap').style.display  = mode==='map'?'':'none';
   $('placeAi').style.display   = mode==='ai'?'':'none';
   $('placeMine').style.display = mode==='mine'?'':'none';
   localStorage.setItem(LS.PMODE, mode);
   if(mode==='mine') renderSavedPlaces();
 }
-document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>switchMode(b.dataset.mode));
+document.querySelectorAll('#placeSub .mode').forEach(b=>b.onclick=()=>switchMode(b.dataset.mode));
 function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
 function renderInterests(){
   $('interestChips').innerHTML = state.interests.map((v,i)=>`<span class="chip">${esc(v)} <b data-ri="${i}">✕</b></span>`).join('')
@@ -1707,6 +1738,50 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 
+/* ================= 식사·간식 기록 ================= */
+const MEAL_EMOJI={아침:'🍚',점심:'🍱',저녁:'🍽',간식:'🍪'};
+let mealType='아침';
+document.querySelectorAll('#mealTypeModes .mode').forEach(b=>b.onclick=()=>{
+  mealType=b.dataset.mtype;
+  document.querySelectorAll('#mealTypeModes .mode').forEach(x=>x.classList.toggle('on', x===b));
+});
+function addMeal(){
+  const text=$('mealText').value.trim();
+  if(!text){ toast('무엇을 먹었는지 입력해 주세요.'); return; }
+  const now=Date.now();
+  state.mealLogs.push({ id:'ml'+now+Math.random().toString(36).slice(2,6), date:ymd(new Date()), type:mealType, text, at:now, updatedAt:now });
+  saveMealsLocal(); $('mealText').value=''; renderMeals();
+  toast(`${mealType} 기록했어요 ${MEAL_EMOJI[mealType]||''}`);
+}
+$('btnAddMeal').onclick=addMeal;
+$('mealText').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addMeal(); } });
+function deleteMeal(id){
+  state.mealLogs=state.mealLogs.filter(m=>m.id!==id);
+  state.mealDeleted[id]=Date.now();
+  saveMealsLocal(); renderMeals();
+}
+function renderMeals(){
+  const box=$('mealLogList');
+  if(!state.mealLogs.length){ box.innerHTML=`<div class="empty"><span class="em">🍽</span>아직 기록이 없어요.<br>위에서 오늘 먹은 것을 기록해 보세요.</div>`; return; }
+  const byDate={};
+  state.mealLogs.forEach(m=>{ (byDate[m.date]=byDate[m.date]||[]).push(m); });
+  const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:1);
+  const today=ymd(new Date()), yesterday=ymd(new Date(Date.now()-86400000));
+  box.innerHTML=dates.map(d=>{
+    const items=byDate[d].slice().sort((a,b)=>(a.at||0)-(b.at||0));
+    const label=d===today?'오늘':(d===yesterday?'어제':d);
+    const rows=items.map(m=>`<div class="item" data-mealid="${m.id}">
+      <div class="body">
+        <div class="title">${MEAL_EMOJI[m.type]||'🍽'} ${esc(m.type)} · ${esc(m.text)}</div>
+        <div class="meta">${new Date(m.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <button class="del" data-mealdel="${m.id}">✕</button>
+    </div>`).join('');
+    return `<div class="saved-h">${esc(label)}</div>${rows}`;
+  }).join('');
+  box.querySelectorAll('[data-mealdel]').forEach(b=>b.onclick=()=>deleteMeal(b.dataset.mealdel));
+}
+
 /* ================= 자체 점검 (?selftest) ================= */
 function selftest(){
   const r=normalizeStructured('```json\n{"title":"현장학습","date":"2026-09-12","time":"08:30","tasks":["물통 준비","모자 준비"],"notes":["08:30까지 등원"]}\n```');
@@ -1737,6 +1812,7 @@ render();
 const _tab=localStorage.getItem(LS.TAB)||'board';
 if(_tab==='play'){ switchTab('play'); const _sub=localStorage.getItem(LS.SUB); if(_sub) switchSub(_sub); }
 else if(_tab==='screen'){ switchTab('screen'); }
+else if(_tab==='meal'){ switchTab('meal'); }
 resumeTimer();   // 다른 탭에 있어도 진행 중 타이머는 계속 돌아가게
 if(!state.apiKey) setTimeout(()=>openModal('keyModal'),400);
 (async()=>{

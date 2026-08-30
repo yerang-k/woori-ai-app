@@ -26,6 +26,8 @@ var PLAY_NAME  = 'plays';   // 저장 놀이 시트
 var PLAYDEL_NAME= 'plays_deleted';
 var SCR_NAME   = 'screen';  // 영상 시청 기록(세션) 시트
 var SCRDEL_NAME= 'screen_deleted';
+var MEAL_NAME  = 'meals';   // 식사·간식 기록 시트
+var MEALDEL_NAME='meals_deleted';
 
 function KEY_() {
   return PropertiesService.getScriptProperties().getProperty('FAMILY_KEY') || '';
@@ -87,8 +89,18 @@ function read_() {
   var scd = sheet_(SCRDEL_NAME, ['id', 'deletedAt']);
   var scdv = scd.getDataRange().getValues();
   for (var u2 = 1; u2 < scdv.length; u2++) { if (scdv[u2][0]) screenDeleted[scdv[u2][0]] = Number(scdv[u2][1]) || 0; }
+  // 식사·간식 기록
+  var meals = [];
+  var mls = sheet_(MEAL_NAME, ['id', 'updatedAt', 'json']);
+  var mlv = mls.getDataRange().getValues();
+  for (var v2 = 1; v2 < mlv.length; v2++) { if (mlv[v2][0]) { try { meals.push(JSON.parse(mlv[v2][2])); } catch (e) {} } }
+  var mealsDeleted = {};
+  var mld = sheet_(MEALDEL_NAME, ['id', 'deletedAt']);
+  var mldv = mld.getDataRange().getValues();
+  for (var w2 = 1; w2 < mldv.length; w2++) { if (mldv[w2][0]) mealsDeleted[mldv[w2][0]] = Number(mldv[w2][1]) || 0; }
   return { entries: entries, deleted: deleted, meta: meta, places: places, placesDeleted: placesDeleted,
-    plays: plays, playsDeleted: playsDeleted, screen: screen, screenDeleted: screenDeleted };
+    plays: plays, playsDeleted: playsDeleted, screen: screen, screenDeleted: screenDeleted,
+    meals: meals, mealsDeleted: mealsDeleted };
 }
 
 // 저장소 통째로 다시 쓰기
@@ -136,6 +148,16 @@ function write_(state) {
   var scdd = state.screenDeleted || {};
   var scdrows = Object.keys(scdd).map(function (id) { return [id, scdd[id]]; });
   if (scdrows.length) scd.getRange(2, 1, scdrows.length, 2).setValues(scdrows);
+  // 식사·간식 기록
+  var mls = sheet_(MEAL_NAME, ['id', 'updatedAt', 'json']);
+  mls.clearContents(); mls.appendRow(['id', 'updatedAt', 'json']);
+  var mlrows = (state.meals || []).map(function (e) { return [e.id, e.updatedAt || 0, JSON.stringify(e)]; });
+  if (mlrows.length) mls.getRange(2, 1, mlrows.length, 3).setValues(mlrows);
+  var mld = sheet_(MEALDEL_NAME, ['id', 'deletedAt']);
+  mld.clearContents(); mld.appendRow(['id', 'deletedAt']);
+  var mldd = state.mealsDeleted || {};
+  var mldrows = Object.keys(mldd).map(function (id) { return [id, mldd[id]]; });
+  if (mldrows.length) mld.getRange(2, 1, mldrows.length, 2).setValues(mldrows);
 }
 
 // id별 병합(최신 우선 + 삭제표시). 클라이언트와 동일 규칙.
@@ -160,12 +182,14 @@ function merge_(a, b) {
   var pm = mergeById_(a.places, a.placesDeleted, b.places, b.placesDeleted);
   var plm = mergeById_(a.plays, a.playsDeleted, b.plays, b.playsDeleted);
   var scm = mergeById_(a.screen, a.screenDeleted, b.screen, b.screenDeleted);
+  var mlm = mergeById_(a.meals, a.mealsDeleted, b.meals, b.mealsDeleted);
   var am = a.meta || { at: 0 }, bm = b.meta || { at: 0 };
   var meta = (bm.at || 0) > (am.at || 0) ? bm : am;   // 이름·사진: 최근 변경 우선
   return { entries: em.items, deleted: em.deleted, meta: meta,
     places: pm.items, placesDeleted: pm.deleted,
     plays: plm.items, playsDeleted: plm.deleted,
-    screen: scm.items, screenDeleted: scm.deleted };
+    screen: scm.items, screenDeleted: scm.deleted,
+    meals: mlm.items, mealsDeleted: mlm.deleted };
 }
 
 // 가족 키로부터 ntfy 채널 이름 (앱과 동일 규칙: sha256 앞 16자리)
@@ -201,7 +225,7 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch (err) { return json_({ ok: false, error: 'busy' }); }
   try {
-    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {}, plays: [], playsDeleted: {}, screen: [], screenDeleted: {} };
+    var incoming = body.state || { entries: [], deleted: {}, meta: { at: 0 }, places: [], placesDeleted: {}, plays: [], playsDeleted: {}, screen: [], screenDeleted: {}, meals: [], mealsDeleted: {} };
     var before = read_();
     // 이번에 처음 올라온 공지 수(폰 알림용)
     var haveIds = {};
