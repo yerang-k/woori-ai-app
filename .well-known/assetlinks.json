@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "dev.pages.woori_ai.twa",
+    "sha256_cert_fingerprints": [
+      "C8:E7:3A:D3:80:14:9F:A2:4F:95:2A:C0:E5:A1:C2:29:B0:B5:EB:2E:4A:97:9B:8F:A0:F6:A4:56:32:BE:04:41"
+    ]
+  }
+}]
