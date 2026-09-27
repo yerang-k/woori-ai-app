@@ -88,6 +88,7 @@ export async function sendWebPush(subscription, payloadObj, vapidKeys) {
       'Content-Type': 'application/octet-stream',
       'Content-Encoding': 'aes128gcm',
       'TTL': '86400',
+      'Urgency': 'high',   // Doze 모드에서도 지체 없이 즉시 전달되도록
       'Authorization': authHeader
     },
     body
