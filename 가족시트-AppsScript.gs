@@ -7,6 +7,8 @@
  * 3) 기본 코드 지우고 이 파일 내용 전체 붙여넣기 → 저장
  * 4) [프로젝트 설정(톱니)] → [스크립트 속성] → 속성 추가:
  *      이름: FAMILY_KEY   값: (가족끼리 정한 비밀 코드, 예: uri-seojun-2026)
+ *      이름: PUSH_SHARED_SECRET   값: (앱 자체 푸시 알림용 비밀키 — Cloudflare Pages 환경변수와 동일한 값)
+ *        ※ 이 속성을 안 넣으면 ntfy 알림만 동작하고, 앱 자체 푸시는 조용히 건너뜁니다.
  * 5) [배포] → [새 배포] → 유형 [웹 앱]
  *      - 실행: 나
  *      - 액세스 권한: "모든 사용자"
@@ -211,6 +213,24 @@ function notifyNtfy_(n) {
     });
   } catch (err) {}
 }
+// 앱 자체 푸시 알림(별도 ntfy 앱 설치 불필요) — PUSH_SHARED_SECRET 미설정 시 조용히 건너뜀
+function notifyPush_(n) {
+  try {
+    var secret = PropertiesService.getScriptProperties().getProperty('PUSH_SHARED_SECRET') || '';
+    if (!secret) return;
+    UrlFetchApp.fetch('https://woori-ai.pages.dev/api/push-send', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Bearer ' + secret },
+      payload: JSON.stringify({
+        familyId: ntfyTopic_(),
+        title: '우리 아이 🔔',
+        body: '가족이 새 공지를 등록했어요 (' + n + '건). 앱에서 확인하세요.'
+      }),
+      muteHttpExceptions: true
+    });
+  } catch (err) {}
+}
 
 function doGet(e) {
   if ((e.parameter.key || '') !== KEY_()) return json_({ ok: false, error: 'key' });
@@ -234,7 +254,7 @@ function doPost(e) {
     var merged = merge_(before, incoming);
     write_(merged);
     // 첫 연결(서버가 비어있던 경우)엔 알림 생략 → 기존 공지 무더기 알림 방지
-    if (newCount > 0 && (before.entries || []).length > 0) notifyNtfy_(newCount);
+    if (newCount > 0 && (before.entries || []).length > 0) { notifyNtfy_(newCount); notifyPush_(newCount); }
     return json_({ ok: true, state: merged });
   } finally {
     lock.releaseLock();
