@@ -218,7 +218,7 @@ function notifyPush_(n) {
   try {
     var secret = PropertiesService.getScriptProperties().getProperty('PUSH_SHARED_SECRET') || '';
     if (!secret) return;
-    UrlFetchApp.fetch('https://woori-ai.pages.dev/api/push-send', {
+    var res = UrlFetchApp.fetch('https://woori-ai.pages.dev/api/push-send', {
       method: 'post',
       contentType: 'application/json',
       headers: { 'Authorization': 'Bearer ' + secret },
@@ -229,7 +229,11 @@ function notifyPush_(n) {
       }),
       muteHttpExceptions: true
     });
-  } catch (err) {}
+    // 실행 로그에서 발송 결과(성공/실패, 만료 구독 등) 확인용
+    Logger.log('push-send 응답 %s: %s', res.getResponseCode(), res.getContentText());
+  } catch (err) {
+    Logger.log('push-send 호출 실패: %s', err);
+  }
 }
 
 function doGet(e) {
