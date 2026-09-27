@@ -20,7 +20,7 @@ export async function onRequestPost({ request, env }) {
 
   const key = 'sub:' + familyId;
   const list = (await env.PUSH_SUBS.get(key, { type: 'json' })) || [];
-  if (!list.length) return json({ ok: true, sent: 0 });
+  if (!list.length) return json({ ok: true, sent: 0, count: 0 });
 
   const vapidKeys = {
     publicKey: env.VAPID_PUBLIC_KEY,
@@ -30,19 +30,24 @@ export async function onRequestPost({ request, env }) {
   const payload = { title: title || '우리 아이', body: msgBody || '새 소식이 있어요.' };
 
   const survivors = [];
+  const results = [];
   let sent = 0;
   await Promise.all(list.map(async (sub) => {
     try {
       const res = await sendWebPush(sub, payload, vapidKeys);
+      let errText = '';
+      if (!res.ok) { try { errText = (await res.text()).slice(0, 200); } catch (e2) {} }
+      results.push({ status: res.status, ok: res.ok, endpointHost: new URL(sub.endpoint).host, err: errText });
       if (res.status === 404 || res.status === 410) return; // 만료된 구독 → 목록에서 제거
       survivors.push(sub);
       if (res.ok) sent++;
     } catch (e) {
+      results.push({ status: 0, ok: false, endpointHost: (() => { try { return new URL(sub.endpoint).host; } catch (e3) { return '?'; } })(), err: String(e && e.message || e) });
       survivors.push(sub);
     }
   }));
   if (survivors.length !== list.length) {
     await env.PUSH_SUBS.put(key, JSON.stringify(survivors));
   }
-  return json({ ok: true, sent });
+  return json({ ok: true, sent, count: list.length, results });
 }
