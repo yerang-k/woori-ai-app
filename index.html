@@ -431,7 +431,11 @@
     <button class="btn ghost" id="btnInvite">아빠에게 초대코드 공유</button>
 
     <div class="mini-h" style="margin-top:14px">📣 폰 알림 (앱 꺼져 있어도)</div>
-    <p class="hint">무료 <b>ntfy</b> 앱을 깔고 아래 채널을 구독해 주세요. 가족이 새 공지를 등록하면 폰 알림이 즉시 옵니다. (ntfy 앱 설치 -> 우측 하단 + 버튼 -> 채널명 입력)</p>
+    <p class="hint">별도 앱 설치 없이, 이 앱 자체로 알림을 받을 수 있어요. 가족이 새 공지를 등록하면 이 휴대폰에 바로 알림이 와요.</p>
+    <button class="btn primary" id="btnPushEnable" style="margin-top:6px">🔔 이 휴대폰에서 앱 알림 받기</button>
+
+    <div class="mini-h" style="margin-top:14px">그 외 방법 — ntfy 앱 사용</div>
+    <p class="hint">위 방법이 안 되는 기기라면, 무료 <b>ntfy</b> 앱을 깔고 아래 채널을 구독해도 돼요. (ntfy 앱 설치 -> 우측 하단 + 버튼 -> 채널명 입력)</p>
     <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
       <input type="text" id="ntfyTopic" readonly placeholder="가족 연결 후 표시됩니다" style="flex:1">
       <button class="btn ghost" id="btnNtfyCopy" style="margin:0;width:auto;padding:0 12px">복사</button>
@@ -461,7 +465,7 @@
 </div>
 
 <script>
-const APP_VERSION='v64 · 지도검색 장소 바로 저장';
+const APP_VERSION='v65 · 앱 자체 푸시 알림';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1264,8 +1268,41 @@ function openFamily(){
   $('syncUrlInput').value=state.syncUrl; $('syncKeyInput').value=state.syncKey; markMe();
   setSyncStatus(syncConfigured()?'연결됨':'아직 연결 안 됨');
   computeNtfyTopic().then(t=>{ $('ntfyTopic').value=t||''; });
+  updatePushBtn();
   openModal('familyModal');
 }
+/* ---- 자체 푸시 알림(웹 푸시) — ntfy 앱 설치 없이 이 앱으로 직접 알림 받기 ---- */
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64); const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+function updatePushBtn(){
+  const btn=$('btnPushEnable'); if(!btn) return;
+  btn.textContent = localStorage.getItem('wooriai_push_on')==='1'
+    ? '🔔 앱 알림 켜짐 (다시 누르면 이 기기 재등록)' : '🔔 이 휴대폰에서 앱 알림 받기';
+}
+async function enablePush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){ toast('이 브라우저는 푸시 알림을 지원하지 않아요.'); return; }
+  if(!state.syncKey){ toast('먼저 가족을 연결해 주세요.'); return; }
+  try{
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){ toast('알림 권한을 허용해야 받을 수 있어요.'); return; }
+    const reg=await navigator.serviceWorker.ready;
+    const keyRes=await fetch('/api/vapid-public-key'); const {publicKey}=await keyRes.json();
+    if(!publicKey){ toast('알림 설정에 문제가 있어요. 나중에 다시 시도해 주세요.'); return; }
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){ sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlBase64ToUint8Array(publicKey) }); }
+    const familyId=await computeNtfyTopic();
+    await fetch('/api/push-subscribe', { method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ familyId, subscription:sub.toJSON() }) });
+    localStorage.setItem('wooriai_push_on','1'); updatePushBtn();
+    toast('이 휴대폰으로 앱 알림을 받을게요 🔔');
+  }catch(e){ toast('알림 설정 실패: '+e.message); }
+}
+$('btnPushEnable').onclick=enablePush;
 $('btnNtfyCopy').onclick=async()=>{ if(!_ntfyTopic){ toast('먼저 가족을 연결해 주세요.'); return; }
   try{ await navigator.clipboard.writeText(_ntfyTopic); toast('채널 이름을 복사했어요'); }catch(e){ toast(_ntfyTopic); } };
 $('btnNtfyOpen').onclick=()=>{ if(!_ntfyTopic){ toast('먼저 가족을 연결해 주세요.'); return; }
