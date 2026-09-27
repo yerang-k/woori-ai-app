@@ -285,6 +285,7 @@
           <input type="text" id="mapSearchInput" placeholder="예: 키즈카페, 놀이터, 수목원" style="flex:1">
           <button class="btn primary" id="btnMapSearch" style="margin:0;width:auto;flex:0 0 auto;padding:0 18px">검색</button>
         </div>
+        <button class="btn ghost" id="btnSaveMapPlace" style="margin-top:8px" title="저장">☆ 이 장소 내 장소로 저장</button>
         <p class="hint" style="margin-top:6px">우리 동네 주변으로 네이버 지도에서 검색해요.</p>
       </div>
     </div>
@@ -460,7 +461,7 @@
 </div>
 
 <script>
-const APP_VERSION='v63 · 앱 아이콘 변경';
+const APP_VERSION='v64 · 지도검색 장소 바로 저장';
 /* ================= 저장/상태 ================= */
 const LS = {
   KEY:'wooriai_key', NAME:'wooriai_childname', ENTRIES:'wooriai_entries', MODEL:'wooriai_model',
@@ -1482,6 +1483,7 @@ function switchMode(mode){
   $('placeMine').style.display = mode==='mine'?'':'none';
   localStorage.setItem(LS.PMODE, mode);
   if(mode==='mine') renderSavedPlaces();
+  if(mode==='map') updateSaveMapBtn();
 }
 document.querySelectorAll('#placeSub .mode').forEach(b=>b.onclick=()=>switchMode(b.dataset.mode));
 function saveInterests(){ localStorage.setItem(LS.INTERESTS, JSON.stringify(state.interests)); }
@@ -1638,6 +1640,17 @@ function doMapSearch(){
 }
 $('btnMapSearch').onclick=doMapSearch;
 $('mapSearchInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); doMapSearch(); } });
+function updateSaveMapBtn(){
+  const name=$('mapSearchInput').value.trim();
+  $('btnSaveMapPlace').textContent = name && isSavedPlace(name) ? '★ 저장됨 (다시 누르면 취소)' : '☆ 이 장소 내 장소로 저장';
+}
+$('mapSearchInput').addEventListener('input', updateSaveMapBtn);
+$('btnSaveMapPlace').onclick=()=>{
+  const name=$('mapSearchInput').value.trim();
+  if(!name){ toast('저장할 장소 이름을 입력해 주세요.'); return; }
+  toggleSavePlace({name, type:'지도검색'});
+  updateSaveMapBtn();
+};
 $('btnAddPlace').onclick=()=>{
   const name=$('manualPlaceName').value.trim();
   if(!name){ toast('장소 이름을 입력해 주세요.'); return; }
